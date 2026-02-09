@@ -7,7 +7,7 @@ OUTPUT="$BIN_DIR/main"
 
 mkdir -p $BIN_DIR
 
-gcc -O3 -Wall -Wextra main.c $SRC_DIR/*.c -I$INC_DIR -pthread -o $OUTPUT
+gcc -Wall -Wextra main.c $SRC_DIR/*.c -I$INC_DIR -pthread -o $OUTPUT
 
 if [ $? -eq 0 ]; then
     ./$OUTPUT
