@@ -140,6 +140,68 @@ void* xCalloc(size_t nmemb, size_t size) {
     return ptr;
 }
 
+void* xRealloc(void* ptr, size_t size) {
+    if (ptr == NULL) return xMalloc(size);
+    if (size == 0) {
+        xFree(ptr);
+        return NULL;
+    }
+
+    BlockHeader* header = ((BlockHeader*)ptr) - 1;
+    if (header->magic != 0xDEADBEEF) abort();
+
+    size_t currentSize;
+    if (header->isLarge) {
+        currentSize = header->totalSize - sizeof(BlockHeader);
+    } else {
+        currentSize = getClassSize((int)header->totalSize);
+    }
+
+    if (size <= currentSize) return ptr;
+
+    void* newPtr = xMalloc(size);
+    if (newPtr) {
+        memcpy(newPtr, ptr, currentSize);
+        xFree(ptr);
+    }
+    
+    return newPtr;
+}
+
+void* xShrinkRealloc(void* ptr, size_t size) {
+    if (ptr == NULL) return xMalloc(size);
+    if (size == 0) {
+        xFree(ptr);
+        return NULL;
+    }
+
+    BlockHeader* header = ((BlockHeader*)ptr) - 1;
+    if (header->magic != 0xDEADBEEF) abort();
+
+    size_t currentSize;
+    if (header->isLarge) {
+        currentSize = header->totalSize - sizeof(BlockHeader);
+    } else {
+        currentSize = getClassSize((int)header->totalSize);
+    }
+
+    if (size <= currentSize) {
+        size_t threshold = currentSize / 2; 
+        if (size > threshold) {
+             return ptr;
+        }
+    }
+
+    void* newPtr = xMalloc(size);
+    if (newPtr) {
+        size_t copySize = (currentSize < size) ? currentSize : size;
+        memcpy(newPtr, ptr, copySize);
+        xFree(ptr);
+    }
+    
+    return newPtr;
+}
+
 void xFree(void* ptr) {
     if (!ptr) return;
     BlockHeader* header = ((BlockHeader*)ptr) - 1;
