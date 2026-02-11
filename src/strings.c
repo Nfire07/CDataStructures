@@ -3,10 +3,10 @@
 #include "../include/pointers.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <regex.h>
-
-extern void *memcpy(void *dest, const void *src, size_t n);
+#include <stdarg.h>
 
 bool stringIsNull(const String s) {
     return (s == NULL || s->data == NULL);
@@ -50,11 +50,7 @@ size_t stringLength(const String s) {
 String stringNew(const char* s) {
     if (s == NULL) return NULL;
     
-    size_t len = 0;
-    while (s[len] != '\0') {
-        len++;
-    }
-
+    size_t len = strlen(s);
     String tmp = (String)xMalloc(sizeof(StringStruct));
     if (tmp == NULL) return NULL;
     
@@ -102,11 +98,7 @@ char stringCharAt(const String s, int index) {
 }
 
 unsigned char stringCharCodeAt(const String s, int index) {
-    if (stringIsNull(s)) return 0;
-    int len = (int)s->len;
-    if (index >= len || index < -len) return 0;
-    if (index >= 0) return (unsigned char)s->data[index];
-    return (unsigned char)s->data[len + index];
+    return (unsigned char)stringCharAt(s, index);
 }
 
 String stringFromChar(const char c) {
@@ -117,10 +109,11 @@ String stringFromChar(const char c) {
 String stringSubstring(const String s, const size_t start, const size_t end) {
     if (stringIsNull(s)) return stringNew("");
     size_t len = s->len;
-    if (start > end) return stringNew("");
     
     size_t safeStart = (start > len) ? len : start;
     size_t safeEnd = (end > len) ? len : end;
+    
+    if (safeStart > safeEnd) return stringNew("");
 
     size_t subLen = safeEnd - safeStart;
     String tmp = stringNewEmpty(subLen);
@@ -139,11 +132,7 @@ bool stringEquals(const String s1, const String s2) {
     if (s1 == s2) return true;
     if (stringIsNull(s1) || stringIsNull(s2)) return false;
     if (s1->len != s2->len) return false;
-    
-    for (size_t i = 0; i < s1->len; i++) {
-        if (s1->data[i] != s2->data[i]) return false;
-    }
-    return true;
+    return memcmp(s1->data, s2->data, s1->len) == 0;
 }
 
 bool stringEqualsIgnoreCase(const String s1, const String s2) {
@@ -164,43 +153,24 @@ int stringCompare(const String s1, const String s2) {
     if (stringIsNull(s1)) return -1;
     if (stringIsNull(s2)) return 1;
     
-    size_t minLen = (s1->len < s2->len) ? s1->len : s2->len;
-    for (size_t i = 0; i < minLen; i++) {
-        unsigned char c1 = (unsigned char)s1->data[i];
-        unsigned char c2 = (unsigned char)s2->data[i];
-        if (c1 != c2) {
-            return (c1 < c2) ? -1 : 1;
-        }
-    }
-    
-    if (s1->len == s2->len) return 0;
-    return (s1->len < s2->len) ? -1 : 1;
+    return strcmp(s1->data, s2->data);
 }
 
 int stringIndexOf(const String s, const String needle) {
     if (stringIsNull(s) || stringIsNull(needle)) return -1;
     if (needle->len == 0) return 0;
-    if (needle->len > s->len) return -1;
     
-    for (size_t i = 0; i <= s->len - needle->len; i++) {
-        bool match = true;
-        for (size_t j = 0; j < needle->len; j++) {
-            if (s->data[i + j] != needle->data[j]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) return (int)i;
-    }
-    return -1;
+    char* found = strstr(s->data, needle->data);
+    if (found == NULL) return -1;
+    
+    return (int)(found - s->data);
 }
 
 int stringIndexOfChar(const String s, char c) {
     if (stringIsNull(s)) return -1;
-    for (size_t i = 0; i < s->len; i++) {
-        if (s->data[i] == c) return (int)i;
-    }
-    return -1;
+    char* found = strchr(s->data, c);
+    if (found == NULL) return -1;
+    return (int)(found - s->data);
 }
 
 int stringLastIndexOf(const String s, const String needle) {
@@ -209,14 +179,9 @@ int stringLastIndexOf(const String s, const String needle) {
     if (needle->len > s->len) return -1;
     
     for (int i = (int)(s->len - needle->len); i >= 0; i--) {
-        bool match = true;
-        for (size_t j = 0; j < needle->len; j++) {
-            if (s->data[i + j] != needle->data[j]) {
-                match = false;
-                break;
-            }
+        if (memcmp(s->data + i, needle->data, needle->len) == 0) {
+            return i;
         }
-        if (match) return i;
     }
     return -1;
 }
@@ -228,22 +193,13 @@ bool stringContains(const String s, const String needle) {
 bool stringStartsWith(const String s, const String prefix) {
     if (stringIsNull(s) || stringIsNull(prefix)) return false;
     if (prefix->len > s->len) return false;
-    
-    for (size_t i = 0; i < prefix->len; i++) {
-        if (s->data[i] != prefix->data[i]) return false;
-    }
-    return true;
+    return memcmp(s->data, prefix->data, prefix->len) == 0;
 }
 
 bool stringEndsWith(const String s, const String suffix) {
     if (stringIsNull(s) || stringIsNull(suffix)) return false;
     if (suffix->len > s->len) return false;
-    
-    size_t offset = s->len - suffix->len;
-    for (size_t i = 0; i < suffix->len; i++) {
-        if (s->data[offset + i] != suffix->data[i]) return false;
-    }
-    return true;
+    return memcmp(s->data + (s->len - suffix->len), suffix->data, suffix->len) == 0;
 }
 
 String stringTrim(const String s) {
@@ -268,22 +224,10 @@ String stringReplace(const String s, const String target, const String replaceme
     if (target->len == 0) return stringNew(s->data);
 
     int count = 0;
-    size_t pos = 0;
-    while (pos <= s->len - target->len) {
-        bool match = true;
-        for (size_t j = 0; j < target->len; j++) {
-            if (s->data[pos + j] != target->data[j]) {
-                match = false;
-                break;
-            }
-        }
-        
-        if (match) {
-            count++;
-            pos += target->len;
-        } else {
-            pos++;
-        }
+    char* p = s->data;
+    while ((p = strstr(p, target->data)) != NULL) {
+        count++;
+        p += target->len;
     }
 
     if (count == 0) return stringNew(s->data);
@@ -292,33 +236,24 @@ String stringReplace(const String s, const String target, const String replaceme
     String res = stringNewEmpty(newLen);
     if (!res) return NULL;
 
-    size_t srcIdx = 0;
-    size_t dstIdx = 0;
-    
-    while (srcIdx < s->len) {
-        if (srcIdx > s->len - target->len) {
-            res->data[dstIdx++] = s->data[srcIdx++];
-            continue;
-        }
+    char* dest = res->data;
+    char* src = s->data;
+    char* found;
 
-        bool match = true;
-        for (size_t j = 0; j < target->len; j++) {
-            if (s->data[srcIdx + j] != target->data[j]) {
-                match = false;
-                break;
-            }
-        }
-
-        if (match) {
-            memcpy(res->data + dstIdx, replacement->data, replacement->len);
-            dstIdx += replacement->len;
-            srcIdx += target->len;
-        } else {
-            res->data[dstIdx++] = s->data[srcIdx++];
-        }
+    while ((found = strstr(src, target->data)) != NULL) {
+        size_t segmentLen = found - src;
+        memcpy(dest, src, segmentLen);
+        dest += segmentLen;
+        
+        memcpy(dest, replacement->data, replacement->len);
+        dest += replacement->len;
+        
+        src = found + target->len;
     }
     
-    res->data[newLen] = '\0';
+    strcpy(dest, src);
+    res->len = newLen;
+    
     return res;
 }
 
@@ -356,7 +291,7 @@ String stringJoin(String* parts, const String delimiter) {
 
     if (count == 0) return stringNewEmpty(0);
 
-    size_t delimLen = (delimiter != NULL) ? delimiter->len : 0;
+    size_t delimLen = (stringIsNull(delimiter)) ? 0 : delimiter->len;
     if (count > 1) {
         totalLen += (count - 1) * delimLen;
     }
@@ -374,7 +309,6 @@ String stringJoin(String* parts, const String delimiter) {
             cursor += delimLen;
         }
     }
-    
     *cursor = '\0';
     
     return res;
@@ -385,48 +319,49 @@ String* stringSplit(const String s, const String regexPattern) {
 
     regex_t regex;
     if (regcomp(&regex, regexPattern->data, REG_EXTENDED) != 0) {
-        return NULL; 
+        return NULL;
     }
 
-    size_t token_count = 1; 
-    char* cursor = s->data;
+    size_t tokenCount = 1;
+    const char* cursor = s->data;
     regmatch_t pmatch[1];
 
     while (regexec(&regex, cursor, 1, pmatch, 0) == 0) {
-        size_t matchLen = pmatch[0].rm_eo - pmatch[0].rm_so;
-        cursor += pmatch[0].rm_eo;
-        if (matchLen == 0) cursor++;
-        
-        token_count++;
-        if (*cursor == '\0') break;
+        if (pmatch[0].rm_eo == pmatch[0].rm_so) { 
+             cursor++;
+        } else {
+             cursor += pmatch[0].rm_eo;
+        }
+        tokenCount++;
     }
 
-    String* result = (String*)xMalloc(sizeof(String) * (token_count + 1));
+    String* result = (String*)xCalloc(tokenCount + 1, sizeof(String));
     if (result == NULL) {
         regfree(&regex);
         return NULL;
     }
 
-    size_t current_idx = 0;
-    size_t string_offset = 0;
     cursor = s->data;
-    
+    size_t idx = 0;
+    size_t offset = 0;
+
     while (regexec(&regex, cursor, 1, pmatch, 0) == 0) {
-        size_t match_start_abs = string_offset + pmatch[0].rm_so;
+        size_t matchStart = pmatch[0].rm_so;
+        size_t matchEnd = pmatch[0].rm_eo;
+        
+        result[idx] = stringSubstring(s, offset, offset + matchStart);
+        idx++;
 
-        result[current_idx] = stringSubstring(s, string_offset, match_start_abs);
-        current_idx++;
-
-        size_t advance = pmatch[0].rm_eo;
-        if (advance == 0) advance = 1; 
+        size_t advance = matchEnd;
+        if (advance == 0) advance = 1;
 
         cursor += advance;
-        string_offset += advance;
+        offset += advance;
     }
 
-    result[current_idx] = stringSubstring(s, string_offset, s->len);
-    current_idx++;
-    result[current_idx] = NULL;
+    result[idx] = stringSubstring(s, offset, s->len);
+    idx++;
+    result[idx] = NULL; 
 
     regfree(&regex);
     return result;
@@ -454,43 +389,43 @@ double stringParseDouble(const String s) {
     return atof(s->data);
 }
 
+int stringParseHex(const String s) {
+    if (stringIsNull(s)) return 0;
+    return (int)strtol(s->data, NULL, 16);
+}
+
+int stringParseBinary(const String s) {
+    if (stringIsNull(s)) return 0;
+    return (int)strtol(s->data, NULL, 2);
+}
+
+int stringParseOctal(const String s) {
+    if (stringIsNull(s)) return 0;
+    return (int)strtol(s->data, NULL, 8);
+}
+
 char* stringGetData(const String s){
-    return s->data;
+    return stringIsNull(s) ? NULL : s->data;
 }
 
 String stringSortChars(const String s, SortComparator cmpf) {
     if (stringIsNull(s)) return NULL;
-    if (s->len == 0) return stringNewEmpty(0);
-
-    String res = stringNewEmpty(s->len);
-    if (stringIsNull(res)) return NULL;
-
-    memcpy(res->data, s->data, s->len);
-    res->data[s->len] = '\0';
-
-    if (cmpf == NULL) {
-        cmpf = SORT_CHAR_ASC;
+    String res = stringNew(s->data); 
+    
+    if (res->len > 1) {
+        if (cmpf == NULL) cmpf = SORT_CHAR_ASC;
+        qsort(res->data, res->len, sizeof(char), cmpf);
     }
-
-    if (s->len > 1) {
-        qsort(res->data, s->len, sizeof(char), cmpf);
-    }
-
     return res;
 }
 
-String stringReverse(const String s) {
-    if (null(s)) return NULL;
-    if (s->len == 0) return stringNewEmpty(0);
-
+String stringReverse(String s) {
+    if (stringIsNull(s)) return NULL;
     String res = stringNewEmpty(s->len);
-    if (null(res)) return NULL;
-
+    
     for (size_t i = 0; i < s->len; i++) {
         res->data[i] = s->data[s->len - 1 - i];
     }
-    
     res->data[s->len] = '\0';
-    
     return res;
 }

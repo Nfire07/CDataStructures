@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <time.h>
+#include "include/tui.h"
 #include "include/arrays.h"
 #include "include/strings.h"
 #include "include/files.h"
@@ -15,112 +16,87 @@
         - Graph
 */
 
-void printIntSList(SLinkedList* list) {
-    printf("[SList Len: %zu]: ", list->len);
-    for (size_t i = 0; i < list->len; i++) {
-        int* val = (int*)sLinkedListGet(list, i);
-        if (val) printf("%d -> ", *val);
-    }
-    printf("NULL\n");
-}
+Array createRow(const char* id, const char* name, const char* role, const char* status) {
+    Array row = array(sizeof(String));
+    
+    String s1 = stringNew(id);
+    String s2 = stringNew(name);
+    String s3 = stringNew(role);
+    String s4 = stringNew(status);
 
-void printStringDList(DLinkedList* list) {
-    printf("[DList Len: %zu]: ", list->len);
-    for (size_t i = 0; i < list->len; i++) {
-        char** val = (char**)dLinkedListGet(list, i);
-        if (val) printf("'%s' <-> ", *val);
-    }
-    printf("NULL\n");
+    arrayAdd(row, &s1);
+    arrayAdd(row, &s2);
+    arrayAdd(row, &s3);
+    arrayAdd(row, &s4);
+
+    return row;
 }
 
 int main() {
     printf("Benchmarking the lib C (Custom Array)...\n\n");
     clock_t start = clock();
-    printf("=== TEST 1: SINGLY LINKED LIST (Interi) ===\n");
-
-    SLinkedList slist = sLinkedList(sizeof(int));
-
-    int nums[] = {10, 50, 20, 40, 30};
-    for(int i=0; i<5; i++) {
-        sLinkedListPushBack(&slist, &nums[i]);
-    }
-    printIntSList(&slist);
-
-    int* mid = (int*)sLinkedListGetMiddle(&slist);
-    if(mid) printf("Punto medio: %d\n", *mid);
-
-    printf("Inversione lista...\n");
-    sLinkedListReverse(&slist);
-    printIntSList(&slist);
-
-    printf("Ordinamento (Merge Sort)...\n");
-    sLinkedListSort(&slist, SORT_INT_ASC);
-    printIntSList(&slist);
-
-    printf("Rimozione elemento a indice 2...\n");
-    sLinkedListRemoveAt(&slist, 2);
-    printIntSList(&slist);
-
-    Array sArr = sLinkedListToArray(&slist);
-    printf("Convertito in Array. Elemento 0 dell'array: %d\n", *(int*)arrayGetRef(sArr, 0));
     
-    arrayFree(sArr);
-    sLinkedListFree(&slist);
-    printf("SList liberata.\n\n");
+    tuiClearScreen();
+    tuiCursorVisible(false);
 
-
-    printf("=== TEST 2: DOUBLY LINKED LIST (Stringhe) ===\n");
-
-    DLinkedList dlist = dLinkedList(sizeof(char*));
-
-    char* names[] = {"Anna", "Luca", "Marco", "Giulia"};
-    dLinkedListPushBack(&dlist, &names[0]);
-    dLinkedListPushBack(&dlist, &names[1]);
-    dLinkedListPushFront(&dlist, &names[2]);
-    dLinkedListInsertAt(&dlist, &names[3], 2);
+    tuiGoToXY(5, 2);
+    tuiStyle(TUI_STYLE_BOLD);
+    tuiColorHEX("#00FF99");
+    printf("=== SYSTEM DASHBOARD v1.0 ===");
     
-    printStringDList(&dlist);
+    tuiGoToXY(5, 3);
+    tuiStyle(TUI_STYLE_RESET);
+    tuiColorRGB(150, 150, 150);
+    printf("Gestione Utenti e Risorse");
 
-    printf("Ordinamento alfabetico...\n");
-    dLinkedListSort(&dlist, SORT_CSTRING_ASC);
-    printStringDList(&dlist);
+    Array headers = array(sizeof(String));
+    String h1 = stringNew("ID");
+    String h2 = stringNew("NOME UTENTE");
+    String h3 = stringNew("RUOLO");
+    String h4 = stringNew("STATUS");
 
-    printf("Stampa inversa (Tail -> Head):\n");
-    DLinkedListNode* curr = dlist.tail;
-    while(curr) {
-        printf("'%s' <-> ", *(char**)curr->data);
-        curr = curr->previous;
-    }
-    printf("NULL\n");
+    arrayAdd(headers, &h1);
+    arrayAdd(headers, &h2);
+    arrayAdd(headers, &h3);
+    arrayAdd(headers, &h4);
 
-    dLinkedListFree(&dlist);
-    printf("DList liberata.\n\n");
+    Array rows = array(sizeof(Array));
 
+    Array r1 = createRow("001", "Mario Rossi", "Admin", "ONLINE");
+    Array r2 = createRow("002", "Luigi Verdi", "Developer", "OFFLINE");
+    Array r3 = createRow("003", "Peach Toadstool", "Manager", "BUSY");
+    Array r4 = createRow("004", "Bowser Koopa", "Security", "BANNED");
 
-    printf("=== TEST 3: STACK (Pila LIFO) ===\n");
+    arrayAdd(rows, &r1);
+    arrayAdd(rows, &r2);
+    arrayAdd(rows, &r3);
+    arrayAdd(rows, &r4);
 
-    Stack pila = stack(sizeof(float));
+    tuiGoToXY(5, 5);
+    tuiColor(TUI_CYAN);
+    tuiPrintTable(headers, rows);
 
-    float f1 = 1.1f, f2 = 2.2f, f3 = 3.3f;
+    tuiGoToXY(5, 14);
+    tuiColorHEX("#FF5733");
+    printf("Colore HEX Custom (#FF5733)");
 
-    printf("Push: %.1f\n", f1); stackPush(&pila, &f1);
-    printf("Push: %.1f\n", f2); stackPush(&pila, &f2);
-    printf("Push: %.1f\n", f3); stackPush(&pila, &f3);
+    tuiGoToXY(5, 15);
+    tuiColorRGB(100, 149, 237);
+    printf("Colore RGB Cornflower Blue (100, 149, 237)");
 
-    float* top = (float*)stackPeek(&pila);
-    printf("Peek (Top): %.1f\n", *top);
+    tuiGoToXY(5, 17);
+    tuiStyle(TUI_STYLE_ITALIC);
+    tuiColor(TUI_WHITE);
+    printf("Premi INVIO per uscire...");
 
-    printf("Pop (Rimuovo %.1f)\n", *(float*)stackPop(&pila));
-    
+    getchar();
 
-    void* poppedVal = stackPop(&pila); 
-    printf("Pop (Rimuovo %.1f)\n", *(float*)poppedVal);
-    xFree(poppedVal); 
+    arrayFree(headers); 
+    arrayFree(rows);
 
-    printf("Stack è vuoto? %s\n", stackIsEmpty(&pila) ? "Si" : "No");
-
-    stackFree(&pila);
-    printf("Stack liberato.\n");
+    tuiReset();
+    tuiClearScreen();
+    tuiCursorVisible(true);
 
     clock_t end = clock();
     double time_spent = (double)(end - start) / CLOCKS_PER_SEC;

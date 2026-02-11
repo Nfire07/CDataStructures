@@ -46,6 +46,9 @@ String stringSortChars(const String s, SortComparator cmpf);
 String stringReverse(String s);
 int stringParseInt(const String s);
 double stringParseDouble(const String s);
+int stringParseHex(const String s);
+int stringParseBinary(const String s);
+int stringParseOctal(const String s);
 char* stringGetData(const String s);
 
 #endif
