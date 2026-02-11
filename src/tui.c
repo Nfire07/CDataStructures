@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <../include/strings.h>
+#include <string.h>
 #include "../include/tui.h"
 #include "../include/pointers.h"
+
 
 void tuiReset() {
     printf("\033[0m");
@@ -17,10 +18,7 @@ void tuiGoToXY(int x, int y) {
 }
 
 void tuiCursorVisible(bool visible) {
-    if (visible)
-        printf("\033[?25h");
-    else
-        printf("\033[?25l");
+    printf(visible ? "\033[?25h" : "\033[?25l");
 }
 
 void tuiBackground(short color) {
@@ -43,14 +41,13 @@ void tuiColorHEX(const char* hexColorCode) {
 
     String cleanHex;
     if (stringCharAt(fullHex, 0) == '#') {
-        cleanHex = stringSubstring(fullHex, 1, stringLength(fullHex));
+        cleanHex = stringSubstring(fullHex, 1, fullHex->len);
     } else {
-        cleanHex = stringNew(fullHex->data); 
+        cleanHex = stringNew(fullHex->data);
     }
-    
     stringFree(fullHex);
 
-    if (stringLength(cleanHex) < 6) {
+    if (cleanHex->len < 6) {
         stringFree(cleanHex);
         return;
     }
@@ -75,13 +72,25 @@ void tuiStyle(short style) {
     printf("\033[%dm", style);
 }
 
-static void printRepeat(const char* s, int times) {
+
+static void _tuiPrintRepeat(const char* s, int times) {
     for (int i = 0; i < times; i++) {
         printf("%s", s);
     }
 }
 
-static int getMaxColWidth(Array headers, Array rows, int colIndex) {
+static void _tuiPrintBorder(int* widths, size_t cols, const char* left, const char* mid, const char* right, const char* dash) {
+    printf("%s", left);
+    for (size_t i = 0; i < cols; i++) {
+        _tuiPrintRepeat(dash, widths[i] + 2);
+        if (i < cols - 1) {
+            printf("%s", mid);
+        }
+    }
+    printf("%s\n", right);
+}
+
+static int _tuiGetMaxColWidth(Array headers, Array rows, int colIndex) {
     int maxW = 0;
     
     if (colIndex < headers->len) {
@@ -108,22 +117,19 @@ static int getMaxColWidth(Array headers, Array rows, int colIndex) {
     return maxW;
 }
 
+
 void tuiPrintTable(Array headers, Array rows) {
     if (!headers || !rows) return;
 
     size_t cols = headers->len;
+    if (cols == 0) return;
+
     int* widths = (int*)xCalloc(cols, sizeof(int));
-
     for (size_t i = 0; i < cols; i++) {
-        widths[i] = getMaxColWidth(headers, rows, (int)i);
+        widths[i] = _tuiGetMaxColWidth(headers, rows, (int)i);
     }
 
-    printf("┌");
-    for (size_t i = 0; i < cols; i++) {
-        printRepeat("─", widths[i] + 2);
-        if (i < cols - 1) printf("┬");
-    }
-    printf("┐\n");
+    _tuiPrintBorder(widths, cols, "┌", "┬", "┐", "─");
 
     printf("│");
     for (size_t i = 0; i < cols; i++) {
@@ -131,19 +137,15 @@ void tuiPrintTable(Array headers, Array rows) {
         String h = (hPtr) ? *hPtr : NULL;
         char* data = (h) ? stringGetData(h) : "";
         int len = (h) ? (int)stringLength(h) : 0;
-        
-        printf(" \033[1m%s\033[0m ", data); 
-        printRepeat(" ", widths[i] - len);
+        int padding = widths[i] - len;
+
+        printf(" \033[1m%s\033[22m ", data);
+        _tuiPrintRepeat(" ", padding);
         printf("│");
     }
     printf("\n");
 
-    printf("├");
-    for (size_t i = 0; i < cols; i++) {
-        printRepeat("─", widths[i] + 2);
-        if (i < cols - 1) printf("┼");
-    }
-    printf("┤\n");
+    _tuiPrintBorder(widths, cols, "├", "┼", "┤", "─");
 
     for (size_t i = 0; i < rows->len; i++) {
         Array* rowPtr = (Array*)arrayGetRef(rows, i);
@@ -162,19 +164,17 @@ void tuiPrintTable(Array headers, Array rows) {
                 }
             }
 
-            printf(" %s ", valStr);
-            printRepeat(" ", widths[j] - len);
+            int padding = widths[j] - len;
+            
+            
+            printf(" %s", valStr);
+            _tuiPrintRepeat(" ", padding + 1);
             printf("│");
         }
         printf("\n");
     }
 
-    printf("└");
-    for (size_t i = 0; i < cols; i++) {
-        printRepeat("─", widths[i] + 2);
-        if (i < cols - 1) printf("┴");
-    }
-    printf("┘\n");
+    _tuiPrintBorder(widths, cols, "└", "┴", "┘", "─");
 
     xFree(widths);
 }
