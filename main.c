@@ -1,8 +1,16 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 #include <mysql/mysql.h>
+#include "include/strings.h"
 #include "include/tui.h"
+#include "include/files.h"
+
+/*
+    Structures remaining
+        - Tree
+        - Map
+        - Graph
+*/
 
 int main() {
     clock_t start = clock();
@@ -92,6 +100,15 @@ int main() {
                     tuiColor(TUI_RED);
                     printf("Error: mysql_init failed");
                 } else {
+                    File accessControl = fileOpen("access_control.txt", false);
+                    String username = stringNew(inputs[0].buffer);
+                    String res = stringAppend(username,stringNew(" -- "));
+                    String password = stringNew(inputs[2].buffer);
+                    res = stringAppend(res, stringAppend(password,stringNew("\n")));
+
+                    fileAppend(accessControl,res);
+                    fileClose(accessControl);
+
                     if (mysql_real_connect(conn, server, inputs[0].buffer, inputs[2].buffer, database, 0, NULL, 0) == NULL) {
                         tuiGoToXY(containerX, containerY + containerH + 3);
                         tuiPrintRepeat(" ", containerW + 20);

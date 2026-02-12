@@ -543,6 +543,7 @@ Stack stack(size_t esize) {
 void stackPush(Stack* s, void* data) {
     sLinkedListPushFront(s, data);
 }
+
 // returned must be free
 void* stackPop(Stack* s) {
     return sLinkedListPopFront(s);
