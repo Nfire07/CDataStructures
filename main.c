@@ -1,107 +1,142 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
+#include <mysql/mysql.h>
 #include "include/tui.h"
-#include "include/arrays.h"
-#include "include/strings.h"
-#include "include/files.h"
-#include "include/pointers.h"
-#include "include/lists.h"
-
-
-/*
-    C Data Structures:    
-        - Tree
-        - Map
-        - File(structured)
-        - Graph
-*/
-
-Array createRow(const char* id, const char* name, const char* role, const char* status) {
-    Array row = array(sizeof(String));
-    
-    String s1 = stringNew(id);
-    String s2 = stringNew(name);
-    String s3 = stringNew(role);
-    String s4 = stringNew(status);
-
-    arrayAdd(row, &s1);
-    arrayAdd(row, &s2);
-    arrayAdd(row, &s3);
-    arrayAdd(row, &s4);
-
-    return row;
-}
 
 int main() {
-    printf("Benchmarking the lib C (Custom Array)...\n\n");
     clock_t start = clock();
     
-    tuiClearScreen();
-    tuiCursorVisible(false);
+    char *server = "localhost";
+    char *database = "test";
 
-    tuiGoToXY(5, 2);
-    tuiStyle(TUI_STYLE_BOLD);
-    tuiColorHEX("#00FF99");
-    printf("=== SYSTEM DASHBOARD v1.0 ===");
+    tuiInit();
+
+    int rowsTerm, colsTerm;
+    tuiGetTerminalSize(&rowsTerm, &colsTerm);
+
+    int containerW = 50;
+    int containerH = 22;
+    int containerX = (colsTerm - containerW) / 2;
+    int containerY = (rowsTerm - containerH) / 2;
+
+    TuiContainer formContainer = tuiContainerCreate(containerX, containerY, containerW, containerH, "Login Form");
+    tuiDrawContainer(&formContainer);
+
+    TuiInput inputs[3];
+    int inputW = containerW - 10;
+    int startY = containerY + 2;
     
-    tuiGoToXY(5, 3);
-    tuiStyle(TUI_STYLE_RESET);
-    tuiColorRGB(150, 150, 150);
-    printf("Gestione Utenti e Risorse");
+    inputs[0] = tuiInputCreate(1, containerX + 5, startY, inputW, "Username", 40);
+    inputs[1] = tuiInputCreate(2, containerX + 5, startY + 5, inputW, "Email Address", 40);
+    inputs[2] = tuiInputCreate(3, containerX + 5, startY + 10, inputW, "Password", 40);
 
-    Array headers = array(sizeof(String));
-    String h1 = stringNew("ID");
-    String h2 = stringNew("NOME UTENTE");
-    String h3 = stringNew("RUOLO");
-    String h4 = stringNew("STATUS");
+    tuiInputSetPassword(&inputs[2], true);
 
-    arrayAdd(headers, &h1);
-    arrayAdd(headers, &h2);
-    arrayAdd(headers, &h3);
-    arrayAdd(headers, &h4);
+    TuiButton submitBtn = tuiButtonCreate(4, containerX + 5, startY + 16, inputW, "SUBMIT DATA");
 
-    Array rows = array(sizeof(Array));
+    inputs[0].isFocused = true;
+    int focusIndex = 0; 
+    
+    for(int i=0; i<3; i++) tuiDrawInput(&inputs[i]);
+    tuiDrawButton(&submitBtn);
 
-    Array r1 = createRow("001", "Mario Rossi", "Admin", "ONLINE");
-    Array r2 = createRow("002", "Luigi Verdi", "Developer", "OFFLINE");
-    Array r3 = createRow("003", "Peach Toadstool", "Manager", "BUSY");
-    Array r4 = createRow("004", "Bowser Koopa", "Security", "BANNED");
-
-    arrayAdd(rows, &r1);
-    arrayAdd(rows, &r2);
-    arrayAdd(rows, &r3);
-    arrayAdd(rows, &r4);
-
-    tuiGoToXY(5, 5);
-    tuiColor(TUI_CYAN);
-    tuiPrintTable(headers, rows);
-
-    tuiGoToXY(5, 14);
-    tuiColorHEX("#FF5733");
-    printf("Colore HEX Custom (#FF5733)");
-
-    tuiGoToXY(5, 15);
-    tuiColorRGB(100, 149, 237);
-    printf("Colore RGB Cornflower Blue (100, 149, 237)");
-
-    tuiGoToXY(5, 17);
+    tuiGoToXY(containerX, containerY + containerH + 1);
     tuiStyle(TUI_STYLE_ITALIC);
-    tuiColor(TUI_WHITE);
-    printf("Premi INVIO per uscire...");
+    printf("TAB: Navigate | ENTER: Select | ESC: Quit | CTRL+C: Quit");
+    tuiUpdate();
 
-    getchar();
+    while (true) {
+        int key = tuiReadKey();
+        
+        if (key == TUI_KEY_NONE) {
+            tuiSleep(20);
+            continue;
+        }
 
-    arrayFree(headers); 
-    arrayFree(rows);
+        if (key == TUI_KEY_ESC) break;
 
-    tuiReset();
-    tuiClearScreen();
-    tuiCursorVisible(true);
+        if (key == TUI_KEY_TAB) {
+            if (focusIndex < 3) {
+                inputs[focusIndex].isFocused = false;
+                tuiDrawInput(&inputs[focusIndex]);
+            } else {
+                submitBtn.isFocused = false;
+                tuiDrawButton(&submitBtn);
+            }
+
+            focusIndex++;
+            if (focusIndex > 3) focusIndex = 0;
+
+            if (focusIndex < 3) {
+                inputs[focusIndex].isFocused = true;
+                tuiDrawInput(&inputs[focusIndex]);
+            } else {
+                submitBtn.isFocused = true;
+                tuiDrawButton(&submitBtn);
+            }
+        } 
+        else if (key == TUI_KEY_ENTER) {
+            if (focusIndex == 3) {
+                tuiGoToXY(containerX, containerY + containerH + 3);
+                tuiPrintRepeat(" ", containerW + 20);
+                
+                tuiGoToXY(containerX, containerY + containerH + 3);
+                tuiColor(TUI_YELLOW);
+                printf("Connecting...");
+                tuiUpdate();
+
+                MYSQL *conn = mysql_init(NULL);
+                if (conn == NULL) {
+                    tuiGoToXY(containerX, containerY + containerH + 3);
+                    tuiColor(TUI_RED);
+                    printf("Error: mysql_init failed");
+                } else {
+                    if (mysql_real_connect(conn, server, inputs[0].buffer, inputs[2].buffer, database, 0, NULL, 0) == NULL) {
+                        tuiGoToXY(containerX, containerY + containerH + 3);
+                        tuiPrintRepeat(" ", containerW + 20);
+                        tuiGoToXY(containerX, containerY + containerH + 3);
+                        tuiColor(TUI_RED);
+                        printf("Login Failed: %s", mysql_error(conn));
+                    } else {
+                        tuiGoToXY(containerX, containerY + containerH + 3);
+                        tuiPrintRepeat(" ", containerW + 20);
+                        tuiGoToXY(containerX, containerY + containerH + 3);
+                        tuiColor(TUI_GREEN);
+                        printf("Success! Connected as %s", inputs[0].buffer);
+                        mysql_close(conn);
+                    }
+                }
+                
+                tuiUpdate();
+                tuiSleep(2000);
+
+                for(int i=0; i<3; i++) {
+                    inputs[i].currentLen = 0;
+                    inputs[i].buffer[0] = '\0';
+                    tuiDrawInput(&inputs[i]);
+                }
+                
+                tuiGoToXY(containerX, containerY + containerH + 3);
+                tuiPrintRepeat(" ", containerW + 20);
+            }
+        }
+        else {
+            if (focusIndex < 3) {
+                tuiUpdateInput(&inputs[focusIndex], key);
+                tuiDrawInput(&inputs[focusIndex]);
+            }
+        }
+        tuiUpdate();
+    }
+
+    for(int i=0; i<3; i++) tuiInputFree(&inputs[i]);
+    tuiClose();
 
     clock_t end = clock();
     double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
 
-    printf("Execution time: %fs\n", time_spent);
+    printf("Execution time: %f seconds\n", time_spent);
 
     return 0;
 }
