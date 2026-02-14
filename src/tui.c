@@ -174,8 +174,6 @@ void tuiPrintRepeat(const char* s, int times){
     _tuiPrintRepeat(s,times);
 }
 
-
-
 static void _tuiPrintBorder(int* widths, size_t cols, const char* left, const char* mid, const char* right, const char* dash) {
     printf("%s", left);
     for (size_t i = 0; i < cols; i++) {
@@ -514,4 +512,231 @@ void tuiDrawButton(TuiButton* button) {
     tuiStyle(TUI_STYLE_RESET);
     tuiBackground(TUI_DEFAULT);
     tuiColor(TUI_DEFAULT);
+}
+
+
+void tuiPrinterInt(void* data) {
+    if (!data) return;
+    printf("%d", *(int*)data);
+}
+
+void tuiPrinterString(void* data) {
+    if (!data) return;
+    String s = *(String*)data;
+    if (s && s->data) {
+        printf("%s", s->data);
+    } else {
+        printf("(null)");
+    }
+}
+
+void tuiDrawStringObject(int x, int y, String s) {
+    tuiGoToXY(x, y);
+    if (stringIsNull(s)) {
+        tuiColor(TUI_RED);
+        printf("String: NULL");
+        tuiColor(TUI_DEFAULT);
+        return;
+    }
+
+    tuiColor(TUI_CYAN);
+    printf("String");
+    tuiColor(TUI_WHITE);
+    printf("[Len:%zu]: ", s->len);
+    tuiStyle(TUI_STYLE_BOLD);
+    printf("\"%s\"", s->data ? s->data : "");
+    tuiStyle(TUI_STYLE_RESET);
+}
+
+void tuiDrawArray(int x, int y, Array arr, void (*printFunc)(void*)) {
+    if (!arr) return;
+
+    int cellWidth = 6;
+    int totalLen = arr->len;
+    tuiGoToXY(x, y);
+    tuiColor(TUI_YELLOW);
+    printf("Array");
+    tuiColor(TUI_WHITE);
+    printf(" [Len:%zu | Cap:%zu] ", arr->len, arr->capacity);
+    
+    tuiGoToXY(x, y + 1);
+    printf("┌");
+    for (int i = 0; i < totalLen; i++) {
+        _tuiPrintRepeat("─", cellWidth);
+        if (i < totalLen - 1) printf("┬");
+        else printf("┐");
+    }
+
+    tuiGoToXY(x, y + 2);
+    for (int i = 0; i < totalLen; i++) {
+        int currentX = x + (i * (cellWidth + 1));
+        
+        tuiGoToXY(currentX, y + 2);
+        printf("│ ");
+        
+        void* item = arrayGetRef(arr, i);
+        if (printFunc) {
+            printFunc(item);
+        } else {
+            printf("?");
+        }
+    }
+    tuiGoToXY(x + (totalLen * (cellWidth + 1)), y + 2);
+    printf("│");
+
+    tuiGoToXY(x, y + 3);
+    printf("└");
+    for (int i = 0; i < totalLen; i++) {
+        _tuiPrintRepeat("─", cellWidth);
+        if (i < totalLen - 1) printf("┴");
+        else printf("┘");
+    }
+}
+
+void tuiDrawSLinkedList(int x, int y, SLinkedList* list, void (*printFunc)(void*)) {
+    if (!list) return;
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_MAGENTA);
+    printf("SLinkedList");
+    tuiColor(TUI_WHITE);
+    printf(" [Len:%zu]", list->len);
+
+    int curX = x;
+    int curY = y + 2;
+    SLinkedListNode* current = list->head;
+
+    tuiGoToXY(curX, curY);
+    printf("HEAD ──> ");
+    curX += 9;
+
+    while (current != NULL) {
+        printf("[ ");
+        if (printFunc) {
+            printFunc(current->data);
+        }
+        printf(" ] ──> ");
+        
+        current = current->next;
+    }
+    
+    tuiColor(TUI_RED);
+    printf("NULL");
+    tuiColor(TUI_DEFAULT);
+}
+
+void tuiDrawDLinkedList(int x, int y, DLinkedList* list, void (*printFunc)(void*)) {
+    if (!list) return;
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_MAGENTA);
+    printf("DLinkedList");
+    tuiColor(TUI_WHITE);
+    printf(" [Len:%zu]", list->len);
+
+    int curX = x;
+    int curY = y + 2;
+    DLinkedListNode* current = list->head;
+
+    tuiGoToXY(curX, curY);
+    printf("HEAD <──> ");
+    
+    while (current != NULL) {
+        printf("[ ");
+        if (printFunc) {
+            printFunc(current->data);
+        }
+        printf(" ] <──> ");
+        current = current->next;
+    }
+
+    tuiColor(TUI_RED);
+    printf("NULL");
+    tuiColor(TUI_DEFAULT);
+}
+
+void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*)) {
+    if (!stack) return;
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_GREEN);
+    printf("Stack");
+    tuiColor(TUI_WHITE);
+    printf(" (Top -> Bottom)");
+
+    SLinkedListNode* current = stack->head;
+    int curY = y + 1;
+
+    if (current == NULL) {
+        tuiGoToXY(x, curY++);
+        printf("┌──────────────┐");
+        tuiGoToXY(x, curY++);
+        printf("│    EMPTY     │");
+        tuiGoToXY(x, curY++);
+        printf("└──────────────┘");
+        return;
+    }
+
+    tuiGoToXY(x, curY++);
+    printf("      │  │"); 
+    
+    while (current != NULL) {
+        tuiGoToXY(x, curY++);
+        printf("┌─────▼──▼─────┐");
+        tuiGoToXY(x, curY++);
+        printf("│ ");
+        
+        if (printFunc) {
+            printFunc(current->data);
+        } else {
+            printf("????");
+        }
+
+        tuiGoToXY(x + 15, curY - 1);
+        printf("│");
+        
+        tuiGoToXY(x, curY++);
+        printf("└──────────────┘");
+        
+        current = current->next;
+    }
+}
+
+void tuiDrawFileInfo(int x, int y, File f) {
+    tuiGoToXY(x, y);
+    tuiColor(TUI_BLUE);
+    printf("File Info");
+    tuiStyle(TUI_STYLE_RESET);
+
+    tuiGoToXY(x, y + 1);
+    printf("┌──────────────────────┐");
+    tuiGoToXY(x, y + 2);
+    printf("│ Status: ");
+    if (f && f->fp) {
+        tuiColor(TUI_GREEN);
+        printf("OPEN         ");
+    } else {
+        tuiColor(TUI_RED);
+        printf("CLOSED       ");
+    }
+    tuiColor(TUI_DEFAULT);
+    printf("│");
+    
+    tuiGoToXY(x, y + 3);
+    printf("│ Size:   %-10zu   │", (f ? f->size : 0));
+    
+    tuiGoToXY(x, y + 4);
+    printf("└──────────────────────┘");
+}
+
+int tuiGetTerminalWidth() {
+    int rows, cols;
+    tuiGetTerminalSize(&rows, &cols);
+    return cols;
+}
+
+int tuiGetTerminalHeight() {
+    int rows, cols;
+    tuiGetTerminalSize(&rows, &cols);
+    return rows;
 }

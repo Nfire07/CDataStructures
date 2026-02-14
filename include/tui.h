@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "arrays.h"
+#include "files.h"
+#include "lists.h"
 #include "strings.h"
 
 #define TUI_UTF8
@@ -91,7 +93,16 @@ void tuiDrawContainer(TuiContainer* container);
 TuiButton tuiButtonCreate(int id, int x, int y, int width, const char* label);
 void tuiDrawButton(TuiButton* button);
 void tuiPrintRepeat(const char* s, int times);
-
+void tuiPrinterInt(void* data);
+void tuiPrinterString(void* data);
+void tuiDrawStringObject(int x, int y, String s);
+void tuiDrawArray(int x, int y, Array arr, void (*printFunc)(void*));
+void tuiDrawSLinkedList(int x, int y, SLinkedList* list, void (*printFunc)(void*));
+void tuiDrawDLinkedList(int x, int y, DLinkedList* list, void (*printFunc)(void*));
+void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*));
+void tuiDrawFileInfo(int x, int y, File f);
 int tuiReadKey();
+int tuiGetTerminalWidth();
+int tuiGetTerminalHeight();
 
 #endif
