@@ -7,7 +7,7 @@ double sigmoid(double x) {
 }
 
 double function(double x){
-    return x*x*x;
+    return tanh(x);
 }
 
 
@@ -20,8 +20,8 @@ void drawScene(double minX, double maxX, double minY, double maxY) {
     tuiPlotFunc(function, 0); 
     
     tuiGoToXY(0, 0);
-    printf("Controls: [Arrows] Move | [W/S] Zoom Y | [A/D] Zoom X | [Q] Exit");
-    tuiGoToXY(0, 1);
+    printf("Controls: [Arrows] Move | [+/-] Zoom | [Q] Exit");
+    tuiGoToXY(0, tuiGetTerminalHeight());
     printf("Viewport: X[%.2f : %.2f] Y[%.2f : %.2f]", minX, maxX, minY, maxY);
     
     tuiUpdate();
@@ -68,20 +68,15 @@ int main() {
             changed = true;
         }
 
-        else if (key == 'a') { // Zoom In X (Restringe il range)
-            minX += stepX; maxX -= stepX;
-            changed = true;
-        }
-        else if (key == 'd') { // Zoom Out X (Allarga il range)
-            minX -= stepX; maxX += stepX;
-            changed = true;
-        }
 
-        else if (key == 'w') { // Zoom In Y
+        else if(key == '+'){
+            minX += stepX; maxX -= stepX;
             minY += stepY; maxY -= stepY;
             changed = true;
         }
-        else if (key == 's') { // Zoom Out Y
+
+        else if(key == '-'){
+            minX -= stepX; maxX += stepX;
             minY -= stepY; maxY += stepY;
             changed = true;
         }
