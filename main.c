@@ -13,17 +13,16 @@ double function(double x){
 
 void drawScene(double minX, double maxX, double minY, double maxY) {
     tuiClearScreen();
-    
     tuiSetViewport(minX, maxX, minY, maxY);
     
     tuiPlotAxes();
-    tuiPlotFunc(function, 0); 
-    
+
+    tuiColor(TUI_MAGENTA);
+    tuiDrawRect(projectX(2), projectY(1.7), tuiGetTerminalWidth()/2, tuiGetTerminalHeight()/2);
+    tuiStyle(TUI_STYLE_RESET);
+
     tuiGoToXY(0, 0);
-    printf("Controls: [Arrows] Move | [+/-] Zoom | [Q] Exit");
-    tuiGoToXY(0, tuiGetTerminalHeight());
-    printf("Viewport: X[%.2f : %.2f] Y[%.2f : %.2f]", minX, maxX, minY, maxY);
-    
+    printf("Viewport: X[%.2f : %.2f]", minX, maxX);
     tuiUpdate();
 }
 

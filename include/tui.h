@@ -101,13 +101,13 @@ void tuiColorRGB(short r, short g, short b);
 void tuiColorHEX(const char* hexColorCode);
 void tuiStyle(short style);
 
-void tuiDrawPixel(int x, int y, char c);
+void tuiDrawPixel(int x, int y, const char* c);
 void tuiDrawLine(int x0, int y0, int x1, int y1);
 void tuiDrawRect(int x, int y, int w, int h);
 void tuiDrawStringObject(int x, int y, String s);
 void tuiPrintRepeat(const char* s, int times);
 
-void tuiPrintTable(int x, int y, Array headers, Array rows);
+void tuiDrawTable(int x, int y, Array headers, Array rows);
 TuiInput tuiInputCreate(int id, int x, int y, int width, const char* label, size_t maxLen);
 void tuiInputSetPassword(TuiInput* input, bool isPassword);
 void tuiInputFree(TuiInput* input);
@@ -117,6 +117,9 @@ TuiContainer tuiContainerCreate(int x, int y, int width, int height, const char*
 void tuiDrawContainer(TuiContainer* container);
 TuiButton tuiButtonCreate(int id, int x, int y, int width, const char* label);
 void tuiDrawButton(TuiButton* button);
+
+int projectX(double x);
+int projectY(double y);
 
 void tuiPrinterInt(void* data);
 void tuiPrinterString(void* data);
@@ -131,7 +134,7 @@ void tuiDrawFileInfo(int x, int y, File f);
 
 void tuiSetViewport(double minX, double maxX, double minY, double maxY);
 TuiViewport tuiGetViewport();
-void tuiPlotPoint(double x, double y, char c);
+void tuiPlotPoint(double x, double y, const char* c);
 void tuiPlotLine(double x1, double y1, double x2, double y2);
 void tuiPlotFunc(double (*func)(double), double step);
 void tuiPlotAxes();

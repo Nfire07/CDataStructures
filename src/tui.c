@@ -249,7 +249,7 @@ static int _tuiGetMaxColWidth(Array headers, Array rows, size_t colIndex) {
     return maxW;
 }
 
-void tuiPrintTable(int x, int y, Array headers, Array rows) {
+void tuiDrawTable(int x, int y, Array headers, Array rows) {
     if (!headers || !rows) return;
 
     size_t cols = headers->len;
@@ -934,10 +934,10 @@ void tuiDrawSet(int x, int y, Set set, void (*printKey)(void*)) {
     }
 }
 
-void tuiDrawPixel(int x, int y, char c) {
+void tuiDrawPixel(int x, int y, const char* c) {
     if (x >= 0 && x < _internalTermWidth && y >= 0 && y < _internalTermHeight) {
         tuiGoToXY(x + 1, y + 1);
-        putchar(c);
+        printf("%s", c);
     }
 }
 
@@ -947,7 +947,7 @@ void tuiDrawLine(int x0, int y0, int x1, int y1) {
     int err = dx + dy, e2;
 
     while (1) {
-        tuiDrawPixel(x0, y0, '*');
+        tuiDrawPixel(x0, y0, "*"); 
         if (x0 == x1 && y0 == y1) break;
         e2 = 2 * err;
         if (e2 >= dy) { err += dy; x0 += sx; }
@@ -955,11 +955,39 @@ void tuiDrawLine(int x0, int y0, int x1, int y1) {
     }
 }
 
-void tuiPlotPoint(double x, double y, char c) {
+void tuiDrawRect(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return;
+
+    if (w == 1) {
+        for (int i = 0; i < h; i++) tuiDrawPixel(x, y + i, "│");
+        return;
+    }
+    if (h == 1) {
+        for (int i = 0; i < w; i++) tuiDrawPixel(x + i, y, "─");
+        return;
+    }
+
+    tuiDrawPixel(x, y, "┌");
+    tuiDrawPixel(x + w - 1, y, "┐");
+    tuiDrawPixel(x, y + h - 1, "└");
+    tuiDrawPixel(x + w - 1, y + h - 1, "┘");
+
+    for (int i = 1; i < w - 1; i++) {
+        tuiDrawPixel(x + i, y, "─");
+        tuiDrawPixel(x + i, y + h - 1, "─");
+    }
+
+    for (int i = 1; i < h - 1; i++) {
+        tuiDrawPixel(x, y + i, "│");             
+        tuiDrawPixel(x + w - 1, y + i, "│");  
+    }
+}
+
+void tuiPlotPoint(double x, double y, const char* c) {
     if (x < _viewport.minX || x > _viewport.maxX || 
         y < _viewport.minY || y > _viewport.maxY) return;
         
-    tuiDrawPixel(_projectX(x), _projectY(y), c);
+    tuiDrawPixel(projectX(x), projectY(y), c);
 }
 
 void tuiPlotLine(double x1, double y1, double x2, double y2) {
@@ -968,22 +996,22 @@ void tuiPlotLine(double x1, double y1, double x2, double y2) {
 
 void tuiPlotAxes() {
     if (_viewport.minX <= 0 && _viewport.maxX >= 0) {
-        int screenX = _projectX(0.0);
+        int screenX = projectX(0.0);
         for(int y = 0; y < _internalTermHeight; y++) {
-            tuiDrawPixel(screenX, y, '|');
+            tuiDrawPixel(screenX, y, "│");
         }
     }
     
     if (_viewport.minY <= 0 && _viewport.maxY >= 0) {
-        int screenY = _projectY(0.0);
+        int screenY = projectY(0.0);
         for(int x = 0; x < _internalTermWidth; x++) {
-            tuiDrawPixel(x, screenY, '-');
+            tuiDrawPixel(x, screenY, "─");
         }
     }
     
     if (_viewport.minX <= 0 && _viewport.maxX >= 0 && 
         _viewport.minY <= 0 && _viewport.maxY >= 0) {
-        tuiDrawPixel(_projectX(0), _projectY(0), '+');
+        tuiDrawPixel(projectX(0), projectY(0), "┼");
     }
 }
 
@@ -1046,4 +1074,18 @@ void tuiSetViewport(double minX, double maxX, double minY, double maxY) {
 
 TuiViewport tuiGetViewport() {
     return _viewport;
+}
+
+int projectX(double x) {
+    double range = _viewport.maxX - _viewport.minX;
+    if (range == 0) return 0;
+    double percent = (x - _viewport.minX) / range;
+    return (int)(percent * _internalTermWidth);
+}
+
+int projectY(double y) {
+    double range = _viewport.maxY - _viewport.minY;
+    if (range == 0) return 0;
+    double percent = (y - _viewport.minY) / range;
+    return (_internalTermHeight - 1) - (int)(percent * _internalTermHeight);
 }
