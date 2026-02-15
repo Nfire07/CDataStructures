@@ -1,5 +1,4 @@
 #include "../include/strings.h"
-#include "../include/arrays.h"
 #include "../include/pointers.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +22,16 @@ void stringFree(String s) {
     }
 }
 
+void stringFreeRef(void* elem) {
+    if (elem == NULL) return;
+    String* ps = (String*)elem;
+    
+    if (*ps != NULL) {
+        stringFree(*ps);
+        *ps = NULL;
+    }
+}
+
 void stringsFree(String* s) {
     if (s == NULL) return;
     for (size_t i = 0; s[i] != NULL; i++) {
@@ -35,7 +44,6 @@ String stringNewEmpty(size_t size) {
     String s = (String)xMalloc(sizeof(StringStruct));
     if (s == NULL) return NULL;
     
-    // Usa xCalloc per azzerare la memoria
     s->data = (char*)xCalloc(size + 1, sizeof(char));
     if (s->data == NULL) {
         xFree(s);
@@ -70,7 +78,6 @@ String stringAppend(String s1, const String s2) {
     if (stringIsNull(s1) || stringIsNull(s2)) return s1;
     
     size_t newLen = s1->len + s2->len;
-    // Usa xRealloc per ridimensionare il buffer esistente
     char* newData = (char*)xRealloc(s1->data, newLen + 1);
     if (newData == NULL) return s1;
 
@@ -232,7 +239,6 @@ String stringReplace(String s, const String target, const String replacement) {
     if (count == 0) return s;
 
     size_t newLen = s->len + count * (replacement->len - target->len);
-    // Usa xMalloc per il nuovo buffer
     char* newData = (char*)xMalloc(newLen + 1);
     if (!newData) return s;
 
@@ -250,7 +256,6 @@ String stringReplace(String s, const String target, const String replacement) {
     }
     strcpy(dest, src);
 
-    // Usa xFree per liberare il vecchio buffer
     xFree(s->data);
     s->data = newData;
     s->len = newLen;

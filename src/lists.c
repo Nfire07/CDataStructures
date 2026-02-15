@@ -66,11 +66,14 @@ void* sLinkedListGet(SLinkedList* list, size_t index) {
     return current->data;
 }
 
-void sLinkedListFree(SLinkedList* list) {
+void sLinkedListFree(SLinkedList* list, void (*freeFn)(void*)) {
     SLinkedListNode* current = list->head;
     while (current) {
         SLinkedListNode* tmp = current;
         current = current->next;
+        if (freeFn != NULL) {
+            freeFn(tmp->data);
+        }
         xFree(tmp->data);
         xFree(tmp);
     }
@@ -197,11 +200,14 @@ void* dLinkedListGet(DLinkedList* list, size_t index) {
     return current->data;
 }
 
-void dLinkedListFree(DLinkedList* list) {
+void dLinkedListFree(DLinkedList* list, void (*freeFn)(void*)) {
     DLinkedListNode* current = list->head;
     while (current) {
         DLinkedListNode* tmp = current;
         current = current->next;
+        if (freeFn != NULL) {
+            freeFn(tmp->data);
+        }
         xFree(tmp->data);
         xFree(tmp);
     }
@@ -286,7 +292,6 @@ int sLinkedListIndexOf(SLinkedList* list, void* value, ListComparator cmp) {
     return -1;
 }
 
-// returned must be free
 void* sLinkedListPopFront(SLinkedList* list) {
     if (list->len == 0) return NULL;
     
@@ -347,7 +352,6 @@ int dLinkedListIndexOf(DLinkedList* list, void* value, ListComparator cmp) {
     return -1;
 }
 
-// returned must be free
 void* dLinkedListPopFront(DLinkedList* list) {
     if (list->len == 0) return NULL;
 
@@ -544,7 +548,6 @@ void stackPush(Stack* s, void* data) {
     sLinkedListPushFront(s, data);
 }
 
-// returned must be free
 void* stackPop(Stack* s) {
     return sLinkedListPopFront(s);
 }
@@ -557,6 +560,6 @@ int stackIsEmpty(Stack* s) {
     return s->len == 0;
 }
 
-void stackFree(Stack* s) {
-    sLinkedListFree(s);
+void stackFree(Stack* s, void (*freeFn)(void*)) {
+    sLinkedListFree(s, freeFn);
 }

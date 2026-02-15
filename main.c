@@ -1,40 +1,70 @@
 #include <stdio.h>
-#include <math.h>
+#include "include/arrays.h"
 #include "include/tui.h"
+#include "include/strings.h"
 
-double sigmoid(double x) {
-    return 1.0 / (1.0 + exp(-x));
+void rowDestructor(void* elem) {
+    Array inner = *(Array*)elem;
+    arrayFree(inner, stringFreeRef);
 }
 
-double function(double x){
-    return tanh(x);
+Array createRow(String n1, String n2, String n3, String n4, String n5) {
+    Array row = array(sizeof(String));
+    arrayAdd(row, &n1);
+    arrayAdd(row, &n2);
+    arrayAdd(row, &n3);
+    arrayAdd(row, &n4);
+    arrayAdd(row, &n5);
+    return row;
 }
 
-
-void drawScene(double minX, double maxX, double minY, double maxY) {
+void drawScene(double minX, double maxX, double minY, double maxY, Array header, Array rows) {
     tuiClearScreen();
-    tuiSetViewport(minX, maxX, minY, maxY);
     
-    tuiPlotAxes();
+    tuiSetViewport(minX, maxX, minY, maxY);
 
-    tuiColor(TUI_MAGENTA);
-    tuiDrawRect(projectX(2), projectY(1.7), tuiGetTerminalWidth()/2, tuiGetTerminalHeight()/2);
-    tuiStyle(TUI_STYLE_RESET);
+    tuiColor(TUI_BLUE);
+    tuiDrawTable(2,2, header, rows);
+    tuiColor(TUI_STYLE_RESET);
 
     tuiGoToXY(0, 0);
-    printf("Viewport: X[%.2f : %.2f]", minX, maxX);
+    tuiStyle(TUI_STYLE_BOLD);
+    printf("Viewport: X[%.2f : %.2f] Y[%.2f : %.2f]", minX, maxX, minY, maxY);
+    tuiStyle(TUI_STYLE_RESET);
     tuiUpdate();
 }
 
 int main() {
     tuiInit();
+    Array header = array(sizeof(String));
+    Array rows = array(sizeof(Array)); 
+
+    String h1 = stringNew("First Name");
+    String h2 = stringNew("Last Name");
+    String h3 = stringNew("Age");
+    String h4 = stringNew("Height");
+    String h5 = stringNew("Weight");
+
+    arrayAdd(header, &h1);
+    arrayAdd(header, &h2);
+    arrayAdd(header, &h3);
+    arrayAdd(header, &h4);
+    arrayAdd(header, &h5);
+
+    Array row1 = createRow(stringNew("Nicolo' Emanuele"), stringNew("Mele"), stringNew("18"), stringNew("175cm"), stringNew("77.5kg"));
+    Array row2 = createRow(stringNew("Martin"), stringNew("Garcia"), stringNew("37"), stringNew("195cm"), stringNew("90.75kg"));
+    Array row3 = createRow(stringNew("Galliver"), stringNew("Reds"), stringNew("69"), stringNew("167cm"), stringNew("69.67kg"));
+
+    arrayAdd(rows, &row1);
+    arrayAdd(rows, &row2);
+    arrayAdd(rows, &row3);
 
     double minX = -10.0;
     double maxX = 10.0;
-    double minY = -2.0;
-    double maxY = 2.0;
+    double minY = -5.0;
+    double maxY = 5.0;
 
-    drawScene(minX, maxX, minY, maxY);
+    drawScene(minX, maxX, minY, maxY, header, rows);
 
     while(1) {
         int key = tuiReadKey();
@@ -43,48 +73,15 @@ int main() {
             break;
         }
 
-        bool changed = false;
-        double rangeX = maxX - minX;
-        double rangeY = maxY - minY;
-        double stepX = rangeX * 0.05; 
-        double stepY = rangeY * 0.05;
-
-        
-        if (key == TUI_KEY_LEFT) {
-            minX -= stepX; maxX -= stepX;
-            changed = true;
-        }
-        else if (key == TUI_KEY_RIGHT) {
-            minX += stepX; maxX += stepX;
-            changed = true;
-        }
-        else if (key == TUI_KEY_DOWN) {
-            minY -= stepY; maxY -= stepY;
-            changed = true;
-        }
-        else if (key == TUI_KEY_UP) {
-            minY += stepY; maxY += stepY;
-            changed = true;
-        }
-
-
-        else if(key == '+'){
-            minX += stepX; maxX -= stepX;
-            minY += stepY; maxY -= stepY;
-            changed = true;
-        }
-
-        else if(key == '-'){
-            minX -= stepX; maxX += stepX;
-            minY -= stepY; maxY += stepY;
-            changed = true;
-        }
-
-        if (tuiHasResized() || changed) {
-            drawScene(minX, maxX, minY, maxY);
+        if (tuiHasResized()) {
+            drawScene(minX, maxX, minY, maxY, header, rows);
         }
     }
 
     tuiClose();
+    
+    arrayFree(header, stringFreeRef);
+    arrayFree(rows, rowDestructor);
+
     return 0;
 }

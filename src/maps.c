@@ -111,7 +111,7 @@ bool mapContains(HashMap map, void* key) {
     return mapGetKey(map, key) != NULL;
 }
 
-void mapRemove(HashMap map, void* key) {
+void mapRemove(HashMap map, void* key, void (*keyFree)(void*), void (*valFree)(void*)) {
     if (!map) return;
     uint32_t hash = map->hashFunc(key, map->keySize);
     size_t index = hash % map->capacity;
@@ -126,8 +126,15 @@ void mapRemove(HashMap map, void* key) {
             } else {
                 map->buckets[index] = current->next;
             }
+            
+            if (keyFree) keyFree(current->key);
             xFree(current->key);
-            if (current->value) xFree(current->value);
+
+            if (current->value) {
+                if (valFree) valFree(current->value);
+                xFree(current->value);
+            }
+            
             xFree(current);
             map->count--;
             return;
@@ -137,14 +144,21 @@ void mapRemove(HashMap map, void* key) {
     }
 }
 
-void mapClear(HashMap map) {
+void mapClear(HashMap map, void (*keyFree)(void*), void (*valFree)(void*)) {
     if (!map) return;
     for (size_t i = 0; i < map->capacity; i++) {
         MapEntry* current = map->buckets[i];
         while (current) {
             MapEntry* next = current->next;
+            
+            if (keyFree) keyFree(current->key);
             xFree(current->key);
-            if (current->value) xFree(current->value);
+
+            if (current->value) {
+                if (valFree) valFree(current->value);
+                xFree(current->value);
+            }
+
             xFree(current);
             current = next;
         }
@@ -153,9 +167,9 @@ void mapClear(HashMap map) {
     map->count = 0;
 }
 
-void mapFree(HashMap map) {
+void mapFree(HashMap map, void (*keyFree)(void*), void (*valFree)(void*)) {
     if (!map) return;
-    mapClear(map);
+    mapClear(map, keyFree, valFree);
     xFree(map->buckets);
     xFree(map);
 }
@@ -183,8 +197,8 @@ void setAdd(Set set, void* key) {
     if (set) mapPut(set->map, key, NULL);
 }
 
-void setRemove(Set set, void* key) {
-    if (set) mapRemove(set->map, key);
+void setRemove(Set set, void* key, void (*freeFn)(void*)) {
+    if (set) mapRemove(set->map, key, freeFn, NULL);
 }
 
 bool setContains(Set set, void* key) {
@@ -192,9 +206,9 @@ bool setContains(Set set, void* key) {
     return mapContains(set->map, key);
 }
 
-void setFree(Set set) {
+void setFree(Set set, void (*freeFn)(void*)) {
     if (set) {
-        mapFree(set->map);
+        mapFree(set->map, freeFn, NULL);
         xFree(set);
     }
 }

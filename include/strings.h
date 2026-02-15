@@ -16,6 +16,7 @@ bool stringIsNull(const String s);
 bool stringIsEmpty(const String s);
 
 void stringFree(String s);
+void stringFreeRef(void* elem);
 void stringsFree(String* s);
 
 String stringNewEmpty(size_t size);
@@ -34,8 +35,8 @@ String stringClear(String s);
 String stringSubstring(String s, size_t start, size_t end);
 String stringTrim(String s);
 String stringReplace(String s, const String target, const String replacement);
-String stringToUpperCase(String s);
 String stringReplaceChar(const String s, char base, char replace);
+String stringToUpperCase(String s);
 String stringToLowerCase(String s);
 String stringReverse(String s);
 String stringSortChars(String s, SortComparator cmpf);

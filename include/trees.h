@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
-#include "arrays.h" 
+#include "../include/arrays.h"
 
 typedef struct TreeNode {
     void* data;
@@ -11,7 +11,7 @@ typedef struct TreeNode {
     struct TreeNode* right;
 } TreeNode;
 
-typedef struct {
+typedef struct TreeStruct {
     TreeNode* root;
     size_t esize;
     size_t count;
@@ -20,14 +20,14 @@ typedef struct {
 
 typedef TreeStruct* Tree;
 
-Tree tree(size_t esize, int (*cmp)(const void*, const void*));
+Tree treeCreate(size_t esize, int (*cmp)(const void*, const void*));
 
 void treeInsert(Tree t, void* data);
 bool treeContains(Tree t, void* data);
 void* treeSearch(Tree t, void* data);
-void treeRemove(Tree t, void* data);
-void treeClear(Tree t);
-void treeFree(Tree t);
+void treeRemove(Tree t, void* data, void (*freeFn)(void*));
+void treeClear(Tree t, void (*freeFn)(void*));
+void treeFree(Tree t, void (*freeFn)(void*));
 
 size_t treeSize(Tree t);
 size_t treeHeight(Tree t);

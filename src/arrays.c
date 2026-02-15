@@ -153,8 +153,16 @@ void arrayClear(Array arr) {
     arr->len = 0;
 }
 
-void arrayFree(Array arr) {
+void arrayFree(Array arr, void (*freeFunc)(void*)) {
     if (null(arr)) return;
+
+    if (!null(freeFunc) && !null(arr->data)) {
+        for (size_t i = 0; i < arr->len; i++) {
+            void* itemAddr = (char*)arr->data + (i * arr->esize);
+            freeFunc(itemAddr);
+        }
+    }
+
     xFree(arr->data);
     xFree(arr);
 }

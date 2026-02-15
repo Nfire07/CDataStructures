@@ -26,7 +26,7 @@ void arrayRemoveAt(Array arr, int index);
 void arrayInsert(Array arr, int index, void* e);
 void arraySet(Array arr, int index, void* e);
 void arrayClear(Array arr);
-void arrayFree(Array arr);
+void arrayFree(Array arr, void (*freeFunc)(void*));
 void arraySort(Array arr, SortComparator cmp);
 int SORT_INT_ASC(const void *a, const void *b);
 int SORT_INT_DESC(const void *a, const void *b);

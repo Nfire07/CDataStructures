@@ -3,7 +3,6 @@
 #include "../include/trees.h"
 #include "../include/pointers.h"
 
-
 static TreeNode* _nodeNew(void* data, size_t esize) {
     TreeNode* n = (TreeNode*)xMalloc(sizeof(TreeNode));
     n->data = xMalloc(esize);
@@ -13,10 +12,14 @@ static TreeNode* _nodeNew(void* data, size_t esize) {
     return n;
 }
 
-static void _nodeFree(TreeNode* n) {
+static void _nodeFreeRecursive(TreeNode* n, void (*freeFn)(void*)) {
     if (!n) return;
-    _nodeFree(n->left);
-    _nodeFree(n->right);
+    _nodeFreeRecursive(n->left, freeFn);
+    _nodeFreeRecursive(n->right, freeFn);
+    
+    if (freeFn && n->data) {
+        freeFn(n->data);
+    }
     xFree(n->data);
     xFree(n);
 }
@@ -30,14 +33,19 @@ static int _treeHeightRecursive(TreeNode* n) {
 
 static void _treeToArrRecursive(TreeNode* n, Array arr, int mode) {
     if (!n) return;
+    
     if (mode == 1) arrayAdd(arr, n->data);
+    
     _treeToArrRecursive(n->left, arr, mode);
+    
     if (mode == 0) arrayAdd(arr, n->data);
+    
     _treeToArrRecursive(n->right, arr, mode);
+    
     if (mode == 2) arrayAdd(arr, n->data);
 }
 
-Tree tree(size_t esize, int (*cmp)(const void*, const void*)) {
+Tree treeCreate(size_t esize, int (*cmp)(const void*, const void*)) {
     Tree t = (Tree)xMalloc(sizeof(TreeStruct));
     t->root = NULL;
     t->esize = esize;
@@ -73,6 +81,7 @@ void treeInsert(Tree t, void* data) {
             }
             current = current->right;
         } else {
+            memcpy(current->data, data, t->esize);
             break;
         }
     }
@@ -99,54 +108,60 @@ static TreeNode* _findMin(TreeNode* n) {
     return n;
 }
 
-static TreeNode* _deleteNode(TreeNode* root, void* data, size_t esize, int (*cmp)(const void*, const void*), bool* decreased) {
+static TreeNode* _deleteNode(TreeNode* root, void* data, size_t esize, int (*cmp)(const void*, const void*), bool* decreased, void (*freeFn)(void*)) {
     if (root == NULL) return root;
 
     int r = cmp(data, root->data);
 
     if (r < 0) {
-        root->left = _deleteNode(root->left, data, esize, cmp, decreased);
+        root->left = _deleteNode(root->left, data, esize, cmp, decreased, freeFn);
     } else if (r > 0) {
-        root->right = _deleteNode(root->right, data, esize, cmp, decreased);
+        root->right = _deleteNode(root->right, data, esize, cmp, decreased, freeFn);
     } else {
         *decreased = true;
+        
         if (root->left == NULL) {
             TreeNode* temp = root->right;
+            if (freeFn) freeFn(root->data);
             xFree(root->data);
             xFree(root);
             return temp;
         } else if (root->right == NULL) {
             TreeNode* temp = root->left;
+            if (freeFn) freeFn(root->data);
             xFree(root->data);
             xFree(root);
             return temp;
         }
         
         TreeNode* temp = _findMin(root->right);
+        
+        if (freeFn) freeFn(root->data);
         memcpy(root->data, temp->data, esize);
+        
         bool dummy;
-        root->right = _deleteNode(root->right, temp->data, esize, cmp, &dummy);
+        root->right = _deleteNode(root->right, temp->data, esize, cmp, &dummy, NULL); 
     }
     return root;
 }
 
-void treeRemove(Tree t, void* data) {
+void treeRemove(Tree t, void* data, void (*freeFn)(void*)) {
     if (!t || !t->root) return;
     bool decreased = false;
-    t->root = _deleteNode(t->root, data, t->esize, t->cmp, &decreased);
+    t->root = _deleteNode(t->root, data, t->esize, t->cmp, &decreased, freeFn);
     if (decreased) t->count--;
 }
 
-void treeClear(Tree t) {
+void treeClear(Tree t, void (*freeFn)(void*)) {
     if (!t) return;
-    _nodeFree(t->root);
+    _nodeFreeRecursive(t->root, freeFn);
     t->root = NULL;
     t->count = 0;
 }
 
-void treeFree(Tree t) {
+void treeFree(Tree t, void (*freeFn)(void*)) {
     if (!t) return;
-    treeClear(t);
+    treeClear(t, freeFn);
     xFree(t);
 }
 

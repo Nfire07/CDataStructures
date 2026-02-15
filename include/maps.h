@@ -34,9 +34,9 @@ HashMap mapCreate(size_t keySize, size_t valueSize, size_t capacity);
 void mapPut(HashMap map, void* key, void* value);
 void* mapGet(HashMap map, void* key);
 bool mapContains(HashMap map, void* key);
-void mapRemove(HashMap map, void* key);
-void mapClear(HashMap map);
-void mapFree(HashMap map);
+void mapRemove(HashMap map, void* key, void (*keyFree)(void*), void (*valFree)(void*));
+void mapClear(HashMap map, void (*keyFree)(void*), void (*valFree)(void*));
+void mapFree(HashMap map, void (*keyFree)(void*), void (*valFree)(void*));
 void* mapGetKey(HashMap map, void* key);
 
 uint32_t hashInt(const void* key, size_t size);
@@ -47,9 +47,9 @@ bool keyEqualsString(const void* k1, const void* k2, size_t size);
 Set setCreate(size_t keySize, size_t capacity);
 Set setFromArray(Array arr);
 void setAdd(Set set, void* key);
-void setRemove(Set set, void* key);
+void setRemove(Set set, void* key, void (*freeFn)(void*));
 bool setContains(Set set, void* key);
-void setFree(Set set);
+void setFree(Set set, void (*freeFn)(void*));
 void* setGet(Set set, void* key);
 Array setToArray(Set set);
 

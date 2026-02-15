@@ -1,19 +1,34 @@
 #include <stdio.h>
-#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "../include/files.h"
 #include "../include/pointers.h"
 #include "../include/strings.h"
+#include "../include/arrays.h"
+
+struct FileStruct {
+    FILE* fp;
+    size_t size;
+};
 
 static bool fileCheck(File f) {
     return !null(f) && !null(f->fp);
 }
 
-File fileOpen(const char* filename, bool empty) {
-    if (null((void*)filename)) return NULL;
-    
-    File f = xMalloc(sizeof(FileStruct));
+static void rowDestructor(void* elem) {
+    Array* row = (Array*)elem;
+    if (!null(row) && !null(*row)) {
+        arrayFree(*row, stringFreeRef);
+    }
+}
 
-    if (empty) {
+File fileOpen(const char* filename, bool writeMode) {
+    if (filename == NULL) return NULL;
+    
+    File f = (File)xMalloc(sizeof(struct FileStruct));
+    if (f == NULL) return NULL;
+
+    if (writeMode) {
         f->fp = fopen(filename, "w+b");
         f->size = 0;
     } else {
@@ -25,7 +40,7 @@ File fileOpen(const char* filename, bool empty) {
         return NULL;
     }
 
-    if (!empty) {
+    if (!writeMode) {
         if (fseek(f->fp, 0, SEEK_END) != 0) {
             fclose(f->fp);
             xFree(f);
@@ -46,7 +61,9 @@ File fileOpen(const char* filename, bool empty) {
 
 void fileClose(File f) {
     if (null(f)) return;
-    if (!null(f->fp)) fclose(f->fp);
+    if (f->fp != NULL) {
+        fclose(f->fp);
+    }
     xFree(f);
 }
 
@@ -57,13 +74,26 @@ bool fileException(File f) {
 String fileGetText(File f) {
     if (!fileCheck(f)) return NULL;
     
+    fseek(f->fp, 0, SEEK_END);
+    f->size = (size_t)ftell(f->fp);
+    rewind(f->fp);
+
     if (f->size == 0) return stringNewEmpty(0);
 
     String s = stringNewEmpty(f->size);
-    if (fread(s->data, 1, f->size, f->fp) != f->size) {
-        stringFree(s);
-        return NULL;
+    if (s == NULL) return NULL;
+
+    size_t read = fread(s->data, 1, f->size, f->fp);
+    if (read != f->size) {
+        if (ferror(f->fp)) {
+            stringFree(s);
+            rewind(f->fp);
+            return NULL;
+        }
+        s->len = read;
+        s->data[read] = '\0';
     }
+    
     rewind(f->fp);
     return s;
 }
@@ -71,13 +101,28 @@ String fileGetText(File f) {
 Array fileGetBytes(File f) {
     if (!fileCheck(f)) return NULL;
     
+    fseek(f->fp, 0, SEEK_END);
+    f->size = (size_t)ftell(f->fp);
+    rewind(f->fp);
+
+    if (f->size == 0) return array(1); 
+
     void* buffer = xMalloc(f->size);
+    if (buffer == NULL) return NULL;
+
     if (fread(buffer, 1, f->size, f->fp) != f->size) {
         xFree(buffer);
         return NULL;
     }
     rewind(f->fp);
-    return arrayFromPtr(buffer, f->size, 1);
+    
+    Array arr = array(1);
+    for(size_t i=0; i<f->size; i++) {
+        char b = ((char*)buffer)[i];
+        arrayAdd(arr, &b);
+    }
+    xFree(buffer);
+    return arr;
 }
 
 Array fileGetLines(File f) {
@@ -95,17 +140,17 @@ Array fileGetLines(File f) {
             if (end > start && raw[end - 1] == '\r') end--;
 
             String line = stringSubstring(text, start, end);
-            arrayAdd(lines, &line);
+            arrayAdd(lines, &line); 
             start = i + 1;
         }
     }
 
-    if (start < len) {
-        size_t end = len;
-        if (end > start && raw[end - 1] == '\r') end--;
-        
-        String line = stringSubstring(text, start, end);
-        arrayAdd(lines, &line);
+    if (start <= len) {
+        if (start < len) {
+            String line = stringSubstring(text, start, len);
+            arrayAdd(lines, &line);
+        } else if (len > 0 && raw[len-1] == '\n') {
+        }
     }
 
     stringFree(text);
@@ -113,69 +158,43 @@ Array fileGetLines(File f) {
 }
 
 Array fileGetCSV(File f, char separator) {
-    String text = fileGetText(f);
-    if (stringIsNull(text)) return NULL;
+    Array lines = fileGetLines(f);
+    if (lines == NULL) return NULL;
 
     Array grid = array(sizeof(Array));
-    Array currentRow = array(sizeof(String));
 
-    char* raw = stringGetData(text);
-    size_t len = stringLength(text);
-    size_t start = 0;
+    for (size_t i = 0; i < lines->len; i++) {
+        String* linePtr = (String*)arrayGetRef(lines, i);
+        if (linePtr == NULL || *linePtr == NULL) continue;
 
-    for (size_t i = 0; i < len; i++) {
-        char c = raw[i];
+        String sLine = *linePtr;
+        Array row = array(sizeof(String));
+        
+        size_t start = 0;
+        size_t len = stringLength(sLine);
+        char* raw = stringGetData(sLine);
 
-        if (c == separator) {
-            String cell = stringSubstring(text, start, i);
-            arrayAdd(currentRow, &cell);
-            start = i + 1;
-        } 
-        else if (c == '\n') {
-            size_t end = i;
-            if (end > start && raw[end - 1] == '\r') end--;
-
-            String cell = stringSubstring(text, start, end);
-            arrayAdd(currentRow, &cell);
-            arrayAdd(grid, &currentRow);
-
-            currentRow = array(sizeof(String));
-            start = i + 1;
+        for (size_t j = 0; j < len; j++) {
+            if (raw[j] == separator) {
+                String cell = stringSubstring(sLine, start, j);
+                arrayAdd(row, &cell);
+                start = j + 1;
+            }
         }
+        String lastCell = stringSubstring(sLine, start, len);
+        arrayAdd(row, &lastCell);
+
+        arrayAdd(grid, &row);
     }
 
-    if (start < len) {
-        String cell = stringSubstring(text, start, len);
-        arrayAdd(currentRow, &cell);
-        arrayAdd(grid, &currentRow);
-    } else {
-        if (currentRow->len == 0) {
-            arrayFree(currentRow);
-        } else {
-            String emptyCell = stringNew("");
-            arrayAdd(currentRow, &emptyCell);
-            arrayAdd(grid, &currentRow);
-        }
-    }
-
-    stringFree(text);
+    arrayFree(lines, stringFreeRef);
+    
     return grid;
 }
 
 void fileFreeCSV(Array csv) {
     if (null(csv)) return;
-    for (size_t i = 0; i < csv->len; i++) {
-        Array* rowPtr = (Array*)arrayGetRef(csv, i);
-        if (rowPtr && *rowPtr) {
-            Array row = *rowPtr;
-            for (size_t j = 0; j < row->len; j++) {
-                String* cellPtr = (String*)arrayGetRef(row, j);
-                if (cellPtr) stringFree(*cellPtr);
-            }
-            arrayFree(row);
-        }
-    }
-    arrayFree(csv);
+    arrayFree(csv, rowDestructor);
 }
 
 bool fileClear(File f) {
@@ -190,6 +209,7 @@ bool fileSetText(File f, String s) {
     if (!fileClear(f)) return false;
     
     size_t written = fwrite(s->data, 1, s->len, f->fp);
+    fflush(f->fp);
     f->size = written;
     rewind(f->fp);
     return written == s->len;
@@ -199,10 +219,18 @@ bool fileSetBytes(File f, Array bytes) {
     if (!fileCheck(f) || null(bytes)) return false;
     if (!fileClear(f)) return false;
 
-    size_t written = fwrite(bytes->data, bytes->esize, bytes->len, f->fp);
-    f->size = written * bytes->esize;
+    size_t count = 0;
+    for (size_t i = 0; i < bytes->len; i++) {
+        void* elem = arrayGetRef(bytes, i);
+        if (fwrite(elem, bytes->esize, 1, f->fp) == 1) {
+            count++;
+        }
+    }
+    
+    fflush(f->fp);
+    f->size = count * bytes->esize;
     rewind(f->fp);
-    return written == bytes->len;
+    return count == bytes->len;
 }
 
 bool fileAppend(File f, String s) {
@@ -211,7 +239,7 @@ bool fileAppend(File f, String s) {
     fseek(f->fp, 0, SEEK_END);
     size_t written = fwrite(s->data, 1, s->len, f->fp);
     f->size += written;
-    rewind(f->fp);
+    rewind(f->fp); 
     return written == s->len;
 }
 
@@ -221,14 +249,17 @@ bool fileWriteLines(File f, Array lines) {
 
     for (size_t i = 0; i < lines->len; i++) {
         String* linePtr = (String*)arrayGetRef(lines, i);
-        fwrite((*linePtr)->data, 1, (*linePtr)->len, f->fp);
-        f->size += (*linePtr)->len;
+        if (linePtr && *linePtr) {
+            fwrite((*linePtr)->data, 1, (*linePtr)->len, f->fp);
+            f->size += (*linePtr)->len;
+        }
         
         if (i < lines->len - 1) {
             fputc('\n', f->fp);
             f->size++;
         }
     }
+    fflush(f->fp);
     rewind(f->fp);
     return true;
 }
@@ -240,19 +271,19 @@ bool fileSetLine(File f, String line, size_t lineIndex) {
     if (null(lines)) return false;
 
     if (lineIndex >= lines->len) {
-        for(size_t i=0; i<lines->len; i++) stringFree(*(String*)arrayGetRef(lines, i));
-        arrayFree(lines);
+        arrayFree(lines, stringFreeRef);
         return false;
     }
 
     String* target = (String*)arrayGetRef(lines, lineIndex);
-    stringFree(*target);
-    *target = stringNew(line->data);
+    if (target) {
+        stringFree(*target);
+        *target = stringNew(line->data); 
+    }
 
     bool success = fileWriteLines(f, lines);
 
-    for(size_t i=0; i<lines->len; i++) stringFree(*(String*)arrayGetRef(lines, i));
-    arrayFree(lines);
+    arrayFree(lines, stringFreeRef);
 
     return success;
 }

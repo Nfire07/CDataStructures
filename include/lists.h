@@ -7,27 +7,27 @@
 typedef struct SLinkedListNode{
     void* data;
     struct SLinkedListNode* next;
-}SLinkedListNode;
+} SLinkedListNode;
 
 typedef struct DLinkedListNode{
     void* data;
     struct DLinkedListNode* next;
     struct DLinkedListNode* previous;
-}DLinkedListNode;
+} DLinkedListNode;
 
-typedef struct{
+typedef struct {
     SLinkedListNode* head;
     SLinkedListNode* tail;
     size_t esize;
     size_t len;
-}SLinkedList;
+} SLinkedList;
 
-typedef struct{
+typedef struct {
     DLinkedListNode* head;
     DLinkedListNode* tail;
     size_t esize;
     size_t len;
-}DLinkedList;
+} DLinkedList;
 
 typedef SLinkedList Stack;
 
@@ -38,7 +38,7 @@ void sLinkedListPushFront(SLinkedList* list, void* value);
 void sLinkedListPushBack(SLinkedList* list, void* value);
 void sLinkedListInsertAt(SLinkedList* list, void* value, size_t index);
 void* sLinkedListGet(SLinkedList* list, size_t index);
-void sLinkedListFree(SLinkedList* list);
+void sLinkedListFree(SLinkedList* list, void (*freeFn)(void*));
 Array sLinkedListToArray(SLinkedList* list);
 void* sLinkedListGetMiddle(SLinkedList* list);
 void sLinkedListReverse(SLinkedList* list);
@@ -53,7 +53,7 @@ void dLinkedListPushFront(DLinkedList* list, void* value);
 void dLinkedListPushBack(DLinkedList* list, void* value);
 void dLinkedListInsertAt(DLinkedList* list, void* value, size_t index);
 void* dLinkedListGet(DLinkedList* list, size_t index);
-void dLinkedListFree(DLinkedList* list);
+void dLinkedListFree(DLinkedList* list, void (*freeFn)(void*));
 Array dLinkedListToArray(DLinkedList* list);
 void* dLinkedListGetMiddle(DLinkedList* list);
 void dLinkedListReverse(DLinkedList* list);
@@ -68,6 +68,6 @@ void stackPush(Stack* s, void* data);
 void* stackPop(Stack* s);
 void* stackPeek(Stack* s);
 int stackIsEmpty(Stack* s);
-void stackFree(Stack* s);
+void stackFree(Stack* s, void (*freeFn)(void*));
 
 #endif
