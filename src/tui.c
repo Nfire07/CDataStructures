@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h> 
 #include <signal.h>
 
 #ifdef _WIN32
@@ -17,6 +18,12 @@
 #include "../include/pointers.h"
 #include "../include/strings.h"
 #include "../include/arrays.h"
+#include "../include/trees.h"
+
+static int _internalTermWidth = 80;
+static int _internalTermHeight = 24;
+static volatile sig_atomic_t _resizedFlag = 0;
+static TuiViewport _viewport = {-10.0, 10.0, -10.0, 10.0};
 
 #ifndef _WIN32
 static struct termios orig_termios;
@@ -41,23 +48,39 @@ static void _tuiSignalHandler(int sig) {
         tuiClose();
         exit(0);
     }
+#ifndef _WIN32
+    else if (sig == SIGWINCH) {
+        _resizedFlag = 1;
+    }
+#endif
+}
+
+static void _updateDimensions() {
+    int w, h;
+    tuiGetTerminalSize(&h, &w);
+    _internalTermWidth = w;
+    _internalTermHeight = h;
 }
 
 void tuiInit() {
     signal(SIGINT, _tuiSignalHandler);
-
-#ifdef _WIN32
+    
+#ifndef _WIN32
+    signal(SIGWINCH, _tuiSignalHandler);
+    enableRawMode();
+#else
     SetConsoleOutputCP(CP_UTF8);
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;
     GetConsoleMode(hOut, &dwMode);
     dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     SetConsoleMode(hOut, dwMode | ENABLE_PROCESSED_INPUT);
-#else
-    enableRawMode();
 #endif
+
     tuiCursorVisible(false);
     tuiClearScreen();
+    
+    _updateDimensions();
 }
 
 void tuiClose() {
@@ -185,6 +208,20 @@ static void _tuiPrintBorder(int* widths, size_t cols, const char* left, const ch
     printf("%s", right);
 }
 
+static int _projectX(double x) {
+    double range = _viewport.maxX - _viewport.minX;
+    if (range == 0) return 0;
+    double percent = (x - _viewport.minX) / range;
+    return (int)(percent * _internalTermWidth);
+}
+
+static int _projectY(double y) {
+    double range = _viewport.maxY - _viewport.minY;
+    if (range == 0) return 0;
+    double percent = (y - _viewport.minY) / range;
+    return (_internalTermHeight - 1) - (int)(percent * _internalTermHeight);
+}
+
 static int _tuiGetMaxColWidth(Array headers, Array rows, size_t colIndex) {
     int maxW = 0;
     
@@ -305,7 +342,9 @@ int tuiReadKey() {
     }
 #else
     char c;
-    if (read(STDIN_FILENO, &c, 1) == 1) {
+    ssize_t nread = read(STDIN_FILENO, &c, 1);
+
+    if (nread > 0) {
         if (c == 27) {
             char seq[3];
             if (read(STDIN_FILENO, &seq[0], 1) != 1) return TUI_KEY_ESC;
@@ -729,14 +768,282 @@ void tuiDrawFileInfo(int x, int y, File f) {
     printf("└──────────────────────┘");
 }
 
+static void _tuiDrawTreeNode(TreeNode* node, int x, int y, int offset, void (*printFunc)(void*)) {
+    if (!node) return;
+
+    tuiGoToXY(x, y);
+    
+    printf("(");
+    tuiStyle(TUI_STYLE_BOLD);
+    tuiColor(TUI_CYAN);
+    if (printFunc) printFunc(node->data);
+    else printf("?");
+    tuiColor(TUI_DEFAULT);
+    tuiStyle(TUI_STYLE_RESET);
+    printf(")");
+
+    if (offset < 2) offset = 2; 
+
+    if (node->left) {
+        int childX = x - offset;
+        int childY = y + 2;
+        
+        tuiGoToXY(x - 1, y + 1);
+        printf("┌"); 
+        int dashLen = (x - 1) - childX;
+        for(int k=0; k<dashLen; k++) {
+             tuiGoToXY(x - 2 - k, y + 1);
+             printf("─");
+        }
+        tuiGoToXY(childX, y + 1);
+        printf("┐");
+
+        _tuiDrawTreeNode(node->left, childX, childY, offset / 2, printFunc);
+    }
+
+    if (node->right) {
+        int childX = x + offset;
+        int childY = y + 2;
+
+        tuiGoToXY(x + 1, y + 1);
+        printf("┐");
+        int dashLen = childX - (x + 1);
+        for(int k=0; k<dashLen; k++) {
+             tuiGoToXY(x + 2 + k, y + 1);
+             printf("─");
+        }
+        tuiGoToXY(childX, y + 1);
+        printf("┌");
+
+        _tuiDrawTreeNode(node->right, childX, childY, offset / 2, printFunc);
+    }
+}
+
+void tuiDrawTree(int x, int y, Tree t, void (*printFunc)(void*)) {
+    if (!t) return;
+    
+    tuiGoToXY(x, y);
+    tuiColor(TUI_MAGENTA);
+    printf("Binary Tree");
+    tuiColor(TUI_WHITE);
+    printf(" [Count:%zu | H:%zu]", treeSize(t), treeHeight(t));
+
+    if (t->root == NULL) {
+        tuiGoToXY(x, y + 2);
+        printf("( Empty )");
+        return;
+    }
+
+    size_t h = treeHeight(t);
+    int initialOffset = (int)(1 << (h - 1)) * 3; 
+    if (initialOffset < 10) initialOffset = 10;
+    if (initialOffset > 40) initialOffset = 40;
+
+    _tuiDrawTreeNode(t->root, x, y + 2, initialOffset, printFunc);
+}
+
+void tuiDrawHashMap(int x, int y, HashMap map, void (*printKey)(void*), void (*printVal)(void*)) {
+    if (!map) return;
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_CYAN);
+    printf("HashMap");
+    tuiColor(TUI_WHITE);
+    printf(" [Size:%zu | Buckets:%zu]", map->count, map->capacity);
+
+    int currentY = y + 2;
+
+    for (size_t i = 0; i < map->capacity; i++) {
+        tuiGoToXY(x, currentY);
+        
+        tuiColor(TUI_YELLOW);
+        printf("[%02zu]", i);
+        tuiColor(TUI_DEFAULT);
+        
+        MapEntry* entry = map->buckets[i];
+        
+        if (entry == NULL) {
+            tuiColor(TUI_WHITE);
+            printf(" ─ NULL");
+        } else {
+            while (entry) {
+                printf(" ─> ");
+                
+                tuiStyle(TUI_STYLE_BOLD);
+                printf("[");
+                
+                tuiColor(TUI_GREEN);
+                if (printKey) printKey(entry->key);
+                else printf("K");
+                
+                tuiColor(TUI_WHITE);
+                printf(":");
+                
+                tuiColor(TUI_CYAN);
+                if (printVal) printVal(entry->value);
+                else printf("V");
+                
+                tuiColor(TUI_DEFAULT);
+                printf("]");
+                tuiStyle(TUI_STYLE_RESET);
+
+                entry = entry->next;
+            }
+        }
+        currentY++;
+    }
+}
+
+void tuiDrawSet(int x, int y, Set set, void (*printKey)(void*)) {
+    if (!set) return;
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_CYAN);
+    printf("HashSet");
+    tuiColor(TUI_WHITE);
+    printf(" [Size:%zu | Buckets:%zu]", set->map->count, set->map->capacity);
+
+    int currentY = y + 2;
+    HashMap map = set->map;
+
+    for (size_t i = 0; i < map->capacity; i++) {
+        tuiGoToXY(x, currentY);
+        tuiColor(TUI_YELLOW);
+        printf("[%02zu]", i);
+        tuiColor(TUI_DEFAULT);
+        
+        MapEntry* entry = map->buckets[i];
+        
+        if (entry == NULL) {
+            tuiColor(TUI_WHITE); 
+            printf(" ─ •");
+        } else {
+            while (entry) {
+                printf(" ─> ");
+                tuiStyle(TUI_STYLE_BOLD);
+                printf("(");
+                tuiColor(TUI_GREEN);
+                if (printKey) printKey(entry->key);
+                tuiColor(TUI_DEFAULT);
+                printf(")");
+                tuiStyle(TUI_STYLE_RESET);
+                entry = entry->next;
+            }
+        }
+        currentY++;
+    }
+}
+
+void tuiDrawPixel(int x, int y, char c) {
+    if (x >= 0 && x < _internalTermWidth && y >= 0 && y < _internalTermHeight) {
+        tuiGoToXY(x + 1, y + 1);
+        putchar(c);
+    }
+}
+
+void tuiDrawLine(int x0, int y0, int x1, int y1) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+
+    while (1) {
+        tuiDrawPixel(x0, y0, '*');
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+void tuiPlotPoint(double x, double y, char c) {
+    if (x < _viewport.minX || x > _viewport.maxX || 
+        y < _viewport.minY || y > _viewport.maxY) return;
+        
+    tuiDrawPixel(_projectX(x), _projectY(y), c);
+}
+
+void tuiPlotLine(double x1, double y1, double x2, double y2) {
+    tuiDrawLine(_projectX(x1), _projectY(y1), _projectX(x2), _projectY(y2));
+}
+
+void tuiPlotAxes() {
+    if (_viewport.minX <= 0 && _viewport.maxX >= 0) {
+        int screenX = _projectX(0.0);
+        for(int y = 0; y < _internalTermHeight; y++) {
+            tuiDrawPixel(screenX, y, '|');
+        }
+    }
+    
+    if (_viewport.minY <= 0 && _viewport.maxY >= 0) {
+        int screenY = _projectY(0.0);
+        for(int x = 0; x < _internalTermWidth; x++) {
+            tuiDrawPixel(x, screenY, '-');
+        }
+    }
+    
+    if (_viewport.minX <= 0 && _viewport.maxX >= 0 && 
+        _viewport.minY <= 0 && _viewport.maxY >= 0) {
+        tuiDrawPixel(_projectX(0), _projectY(0), '+');
+    }
+}
+
+void tuiPlotFunc(double (*func)(double), double step) {
+    if (step <= 0) {
+        step = (_viewport.maxX - _viewport.minX) / (double)_internalTermWidth;
+    }
+    
+    double prevX = _viewport.minX;
+    double prevY = func(prevX);
+    
+    for (double x = _viewport.minX + step; x <= _viewport.maxX; x += step) {
+        double y = func(x);
+        tuiPlotLine(prevX, prevY, x, y);
+        prevX = x;
+        prevY = y;
+    }
+}
+
 int tuiGetTerminalWidth() {
-    int rows, cols;
-    tuiGetTerminalSize(&rows, &cols);
-    return cols;
+    if (_internalTermWidth == 0) _updateDimensions();
+    return _internalTermWidth;
 }
 
 int tuiGetTerminalHeight() {
-    int rows, cols;
-    tuiGetTerminalSize(&rows, &cols);
-    return rows;
+    if (_internalTermHeight == 0) _updateDimensions();
+    return _internalTermHeight;
+}
+
+bool tuiHasResized() {
+    bool resized = false;
+#ifdef _WIN32
+    int currentW, currentH;
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    currentW = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    currentH = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    
+    if (currentW != _internalTermWidth || currentH != _internalTermHeight) {
+        _internalTermWidth = currentW;
+        _internalTermHeight = currentH;
+        resized = true;
+    }
+#else
+    if (_resizedFlag) {
+        _resizedFlag = 0;
+        _updateDimensions();
+        resized = true;
+    }
+#endif
+    return resized;
+}
+
+void tuiSetViewport(double minX, double maxX, double minY, double maxY) {
+    _viewport.minX = minX;
+    _viewport.maxX = maxX;
+    _viewport.minY = minY;
+    _viewport.maxY = maxY;
+}
+
+TuiViewport tuiGetViewport() {
+    return _viewport;
 }

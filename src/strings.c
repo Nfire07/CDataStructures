@@ -412,3 +412,17 @@ String stringReverse(String s) {
     }
     return s;
 }
+
+String stringReplaceChar(const String s, char base, char replace) {
+    if (stringIsNull(s)) return NULL;
+    
+    String copy = stringNew(s->data);
+    if (stringIsNull(copy)) return NULL;
+
+    for (size_t i = 0; i < copy->len; i++) {
+        if (copy->data[i] == base) {
+            copy->data[i] = replace;
+        }
+    }
+    return copy;
+}

@@ -7,7 +7,7 @@ OUTPUT="$BIN_DIR/main"
 
 mkdir -p $BIN_DIR
 
-gcc -Wall -Wextra main.c $SRC_DIR/*.c -I$INC_DIR -pthread -lmysqlclient -o $OUTPUT
+gcc -Wall -Wextra main.c $SRC_DIR/*.c -I$INC_DIR -pthread -lm -lmysqlclient -o $OUTPUT
 
 if [ $? -eq 0 ]; then
     ./$OUTPUT
