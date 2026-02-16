@@ -24,7 +24,7 @@ void drawScene(double minX, double maxX, double minY, double maxY, Array header,
     tuiSetViewport(minX, maxX, minY, maxY);
 
     tuiColor(TUI_BLUE);
-    tuiDrawTable(2,2, header, rows);
+    tuiDrawTable(projectX(-2),projectY(-2), header, rows);
     tuiColor(TUI_STYLE_RESET);
 
     tuiGoToXY(0, 0);
@@ -68,12 +68,24 @@ int main() {
 
     while(1) {
         int key = tuiReadKey();
+
+        bool changed = false;
+        double rangeY = maxY - minY;
+        double stepY = rangeY * 0.05;
         
         if (key == 'q' || key == TUI_KEY_ESC) {
             break;
         }
+        else if (key == TUI_KEY_DOWN) {
+            minY -= stepY; maxY -= stepY;
+            changed = true;
+        }
+        else if (key == TUI_KEY_UP) {
+            minY += stepY; maxY += stepY;
+            changed = true;
+        }
 
-        if (tuiHasResized()) {
+        if (tuiHasResized() || changed) {
             drawScene(minX, maxX, minY, maxY, header, rows);
         }
     }
