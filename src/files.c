@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 #include "../include/files.h"
 #include "../include/pointers.h"
 #include "../include/strings.h"
@@ -286,4 +287,36 @@ bool fileSetLine(File f, String line, size_t lineIndex) {
     arrayFree(lines, stringFreeRef);
 
     return success;
+}
+
+Array fileGetList(const char* dirPath, bool hidden) {
+    if (dirPath == NULL) return NULL;
+
+    DIR* d = opendir(dirPath);
+    if (d == NULL) return NULL;
+
+    Array list = array(sizeof(String));
+    if (list == NULL) {
+        closedir(d);
+        return NULL;
+    }
+
+    struct dirent* dir;
+    
+    while ((dir = readdir(d)) != NULL) {
+        if (strcmp(dir->d_name, ".") == 0 || strcmp(dir->d_name, "..") == 0) {
+            continue;
+        }
+
+        if (!hidden && dir->d_name[0] == '.') {
+            continue;
+        }
+
+        String name = stringNew(dir->d_name);
+        
+        arrayAdd(list, &name);
+    }
+
+    closedir(d);
+    return list;
 }

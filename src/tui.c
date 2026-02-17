@@ -12,6 +12,7 @@
     #include <unistd.h>
     #include <termios.h>
     #include <sys/ioctl.h>
+    #include <sys/select.h>
 #endif
 
 #include "../include/tui.h"
@@ -38,7 +39,13 @@ static void enableRawMode() {
     atexit(disableRawMode);
     
     struct termios raw = orig_termios;
-    raw.c_lflag &= ~(ECHO | ICANON | ISIG); 
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    raw.c_oflag &= ~(OPOST);
+    raw.c_cflag |= (CS8);
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 0;
+    
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 #endif
@@ -316,6 +323,7 @@ void tuiDrawTable(int x, int y, Array headers, Array rows) {
 
 int tuiReadKey() {
     int key = TUI_KEY_NONE;
+
 #ifdef _WIN32
     if (_kbhit()) {
         int ch = _getch();
@@ -328,44 +336,56 @@ int tuiReadKey() {
                 case 77: key = TUI_KEY_RIGHT; break;
                 default: key = ch; break;
             }
-        } else if (ch == 8) {
-            key = TUI_KEY_BACKSPACE;
-        } else if (ch == 13) {
-            key = TUI_KEY_ENTER;
-        } else if (ch == 27) {
-            key = TUI_KEY_ESC;
-        } else if (ch == 9) {
-            key = TUI_KEY_TAB;
         } else {
-            key = ch;
+            switch (ch) {
+                case 8: key = TUI_KEY_BACKSPACE; break;
+                case 13: key = TUI_KEY_ENTER; break;
+                case 27: key = TUI_KEY_ESC; break;
+                case 9: key = TUI_KEY_TAB; break;
+                default: key = ch; break;
+            }
         }
     }
 #else
-    char c;
+    unsigned char c;
     ssize_t nread = read(STDIN_FILENO, &c, 1);
 
     if (nread > 0) {
         if (c == 27) {
-            char seq[3];
-            if (read(STDIN_FILENO, &seq[0], 1) != 1) return TUI_KEY_ESC;
-            if (read(STDIN_FILENO, &seq[1], 1) != 1) return TUI_KEY_ESC;
+            struct timeval timeout = {0, 0};
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(STDIN_FILENO, &readfds);
             
-            if (seq[0] == '[') {
-                switch (seq[1]) {
-                    case 'A': key = TUI_KEY_UP; break;
-                    case 'B': key = TUI_KEY_DOWN; break;
-                    case 'C': key = TUI_KEY_RIGHT; break;
-                    case 'D': key = TUI_KEY_LEFT; break;
+            int result = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout);
+            
+            if (result > 0) {
+                char seq[2];
+                if (read(STDIN_FILENO, &seq[0], 1) == 1 && read(STDIN_FILENO, &seq[1], 1) == 1) {
+                    if (seq[0] == '[') {
+                        switch (seq[1]) {
+                            case 'A': key = TUI_KEY_UP; break;
+                            case 'B': key = TUI_KEY_DOWN; break;
+                            case 'C': key = TUI_KEY_RIGHT; break;
+                            case 'D': key = TUI_KEY_LEFT; break;
+                            default: key = TUI_KEY_ESC; break;
+                        }
+                    } else {
+                        key = TUI_KEY_ESC;
+                    }
                 }
+            } else {
+                key = TUI_KEY_ESC;
             }
-        } else if (c == 127 || c == 8) {
-            key = TUI_KEY_BACKSPACE;
-        } else if (c == 10) {
-            key = TUI_KEY_ENTER;
-        } else if (c == 9) {
-            key = TUI_KEY_TAB;
         } else {
-            key = c;
+            switch (c) {
+                case 127:
+                case 8: key = TUI_KEY_BACKSPACE; break;
+                case 10:
+                case 13: key = TUI_KEY_ENTER; break;
+                case 9: key = TUI_KEY_TAB; break;
+                default: key = c; break;
+            }
         }
     }
 #endif
@@ -553,22 +573,6 @@ void tuiDrawButton(TuiButton* button) {
     tuiColor(TUI_DEFAULT);
 }
 
-
-void tuiPrinterInt(void* data) {
-    if (!data) return;
-    printf("%d", *(int*)data);
-}
-
-void tuiPrinterString(void* data) {
-    if (!data) return;
-    String s = *(String*)data;
-    if (s && s->data) {
-        printf("%s", s->data);
-    } else {
-        printf("(null)");
-    }
-}
-
 void tuiDrawStringObject(int x, int y, String s) {
     tuiGoToXY(x, y);
     if (stringIsNull(s)) {
@@ -587,48 +591,120 @@ void tuiDrawStringObject(int x, int y, String s) {
     tuiStyle(TUI_STYLE_RESET);
 }
 
-void tuiDrawArray(int x, int y, Array arr, void (*printFunc)(void*)) {
+void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool showHeader) {
     if (!arr) return;
 
-    int cellWidth = 6;
-    int totalLen = arr->len;
-    tuiGoToXY(x, y);
-    tuiColor(TUI_YELLOW);
-    printf("Array");
-    tuiColor(TUI_WHITE);
-    printf(" [Len:%zu | Cap:%zu] ", arr->len, arr->capacity);
+    int maxContentLen = 0;
     
-    tuiGoToXY(x, y + 1);
-    printf("┌");
-    for (int i = 0; i < totalLen; i++) {
-        _tuiPrintRepeat("─", cellWidth);
-        if (i < totalLen - 1) printf("┬");
-        else printf("┐");
-    }
-
-    tuiGoToXY(x, y + 2);
-    for (int i = 0; i < totalLen; i++) {
-        int currentX = x + (i * (cellWidth + 1));
-        
-        tuiGoToXY(currentX, y + 2);
-        printf("│ ");
-        
-        void* item = arrayGetRef(arr, i);
-        if (printFunc) {
-            printFunc(item);
-        } else {
-            printf("?");
+    if (!printFunc) {
+        maxContentLen = 1;
+    } else {
+        for (size_t i = 0; i < arr->len; i++) {
+            int len = printFunc(arrayGetRef(arr, i), true);
+            if (len > maxContentLen) {
+                maxContentLen = len;
+            }
         }
     }
-    tuiGoToXY(x + (totalLen * (cellWidth + 1)), y + 2);
-    printf("│");
 
-    tuiGoToXY(x, y + 3);
-    printf("└");
-    for (int i = 0; i < totalLen; i++) {
-        _tuiPrintRepeat("─", cellWidth);
-        if (i < totalLen - 1) printf("┴");
-        else printf("┘");
+    int cellWidth = (maxContentLen < 3) ? 3 : maxContentLen;
+    int totalLen = arr->len;
+    int termWidth = tuiGetTerminalWidth();
+    int requiredWidth = (totalLen * (cellWidth + 3)) + 1;
+
+    int startY = y;
+
+    if (showHeader) {
+        tuiGoToXY(x, y);
+        tuiColor(TUI_YELLOW);
+        printf("Array");
+        tuiColor(TUI_WHITE);
+        printf(" [Len:%zu | Cap:%zu] ", arr->len, arr->capacity);
+        startY = y + 1;
+    }
+
+    if ((x + requiredWidth) < termWidth) {
+        tuiGoToXY(x, startY);
+        printf("┌");
+        for (int i = 0; i < totalLen; i++) {
+            tuiPrintRepeat("─", cellWidth + 2); 
+            if (i < totalLen - 1) printf("┬");
+            else printf("┐");
+        }
+
+        tuiGoToXY(x, startY + 1);
+        for (int i = 0; i < totalLen; i++) {
+            int currentX = x + (i * (cellWidth + 3));
+            
+            tuiGoToXY(currentX, startY + 1);
+            printf("│ "); 
+            
+            int printedLen = 0;
+            void* item = arrayGetRef(arr, i);
+            
+            if (printFunc) {
+                printedLen = printFunc(item, false); 
+            } else {
+                printf("?");
+                printedLen = 1;
+            }
+            
+            int paddingRight = cellWidth - printedLen;
+            if (paddingRight > 0) tuiPrintRepeat(" ", paddingRight);
+            
+            printf(" ");
+        }
+        tuiGoToXY(x + (totalLen * (cellWidth + 3)), startY + 1);
+        printf("│");
+
+        tuiGoToXY(x, startY + 2);
+        printf("└");
+        for (int i = 0; i < totalLen; i++) {
+            tuiPrintRepeat("─", cellWidth + 2);
+            if (i < totalLen - 1) printf("┴");
+            else printf("┘");
+        }
+
+    } else {
+        int currentY = startY;
+        
+        for (int i = 0; i < totalLen; i++) {    
+            tuiGoToXY(x, currentY);
+            if (i == 0) {
+                printf("┌");
+                tuiPrintRepeat("─", cellWidth + 2);
+                printf("┐");
+            } else {
+                printf("├");
+                tuiPrintRepeat("─", cellWidth + 2);
+                printf("┤");
+            }
+
+            currentY++;
+            tuiGoToXY(x, currentY);
+            printf("│ ");
+            
+            int printedLen = 0;
+            void* item = arrayGetRef(arr, i);
+
+            if (printFunc) {
+                printedLen = printFunc(item, false);
+            } else {
+                printf("?");
+                printedLen = 1;
+            }
+            
+            int paddingRight = cellWidth - printedLen;
+            if (paddingRight > 0) tuiPrintRepeat(" ", paddingRight);
+            
+            printf(" │");
+            currentY++;
+        }
+
+        tuiGoToXY(x, currentY);
+        printf("└");
+        tuiPrintRepeat("─", cellWidth + 2);
+        printf("┘");
     }
 }
 
@@ -1088,4 +1164,152 @@ int projectY(double y) {
     if (range == 0) return 0;
     double percent = (y - _viewport.minY) / range;
     return (_internalTermHeight - 1) - (int)(percent * _internalTermHeight);
+}
+
+int tuiPrinterInt(void* data, bool dryRun) {
+    int val = *(int*)data;
+    if (dryRun) return snprintf(NULL, 0, "%d", val);
+    return printf("%d", val);
+}
+
+int tuiPrinterUInt(void* data, bool dryRun) {
+    unsigned int val = *(unsigned int*)data;
+    if (dryRun) return snprintf(NULL, 0, "%u", val);
+    return printf("%u", val);
+}
+
+int tuiPrinterSizeT(void* data, bool dryRun) {
+    size_t val = *(size_t*)data;
+    if (dryRun) return snprintf(NULL, 0, "%zu", val);
+    return printf("%zu", val);
+}
+
+int tuiPrinterFloat(void* data, bool dryRun) {
+    float val = *(float*)data;
+    if (dryRun) return snprintf(NULL, 0, "%.2f", val);
+    return printf("%.2f", val);
+}
+
+int tuiPrinterDouble(void* data, bool dryRun) {
+    double val = *(double*)data;
+    if (dryRun) return snprintf(NULL, 0, "%.2f", val);
+    return printf("%.2f", val);
+}
+
+int tuiPrinterChar(void* data, bool dryRun) {
+    char val = *(char*)data;
+    if (dryRun) return 1;
+    return printf("%c", val);
+}
+
+int tuiPrinterBool(void* data, bool dryRun) {
+    bool val = *(bool*)data;
+    const char* s = val ? "true" : "false";
+    if (dryRun) return (int)strlen(s);
+    return printf("%s", s);
+}
+
+int tuiPrinterString(void* data, bool dryRun) {
+    String* sPtr = (String*)data;
+    if (!sPtr || !(*sPtr)) {
+        if (dryRun) return 4; 
+        return printf("NULL");
+    }
+    String s = *sPtr;
+    
+    if (dryRun) return (int)s->len;
+    return printf("%s", s->data);
+}
+
+int tuiPrinterCString(void* data, bool dryRun) {
+    char** sPtr = (char**)data;
+    if (!sPtr || !(*sPtr)) {
+        if (dryRun) return 4;
+        return printf("NULL");
+    }
+    
+    if (dryRun) return snprintf(NULL, 0, "%s", *sPtr);
+    return printf("%s", *sPtr);
+}
+
+static char* _tuiSearchTerm = NULL;
+
+void tuiSetSearchTerm(char* term) {
+    _tuiSearchTerm = term;
+}
+
+int tuiPrinterStringHighlight(void* data, bool dryRun) {
+    String* sPtr = (String*)data;
+    if (!sPtr || !(*sPtr)) return 0;
+    
+    char* text = (*sPtr)->data;
+    size_t len = strlen(text);
+    
+    if (dryRun) return (int)len;
+
+    if (!_tuiSearchTerm || _tuiSearchTerm[0] == '\0') {
+        printf("%s", text);
+        return (int)len;
+    }
+
+    char* match = strstr(text, _tuiSearchTerm);
+
+    if (match) {
+        size_t prefixLen = match - text;
+        size_t searchLen = strlen(_tuiSearchTerm);
+
+        if (prefixLen > 0) {
+            printf("%.*s", (int)prefixLen, text);
+        }
+
+        tuiColor(TUI_GREEN);
+        tuiStyle(TUI_STYLE_BOLD);
+        printf("%.*s", (int)searchLen, match);
+        tuiStyle(TUI_STYLE_RESET);
+        tuiColor(TUI_WHITE); 
+
+        printf("%s", match + searchLen);
+    } else {
+        printf("%s", text);
+    }
+
+    return (int)len;
+}
+
+int tuiPrinterCStringHighlight(void* data, bool dryRun) {
+    char** strPtr = (char**)data;
+    if (!strPtr || !(*strPtr)) return 0;
+
+    char* text = *strPtr;
+    size_t len = strlen(text);
+
+    if (dryRun) return (int)len;
+
+    if (!_tuiSearchTerm || _tuiSearchTerm[0] == '\0') {
+        printf("%s", text);
+        return (int)len;
+    }
+
+    char* match = strstr(text, _tuiSearchTerm);
+
+    if (match) {
+        size_t prefixLen = match - text;
+        size_t searchLen = strlen(_tuiSearchTerm);
+
+        if (prefixLen > 0) {
+            printf("%.*s", (int)prefixLen, text);
+        }
+
+        tuiColor(TUI_GREEN);
+        tuiStyle(TUI_STYLE_BOLD);
+        printf("%.*s", (int)searchLen, match);
+        tuiStyle(TUI_STYLE_RESET);
+        tuiColor(TUI_WHITE);
+
+        printf("%s", match + searchLen);
+    } else {
+        printf("%s", text);
+    }
+
+    return (int)len;
 }

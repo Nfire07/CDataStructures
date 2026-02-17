@@ -10,7 +10,6 @@
 #include "trees.h"
 #include "maps.h"
 
-// --- DEFINE ESISTENTI ---
 #define TUI_UTF8
 
 #define TUI_BLACK 0
@@ -41,8 +40,6 @@
 #define TUI_KEY_DOWN 1002
 #define TUI_KEY_LEFT 1003
 #define TUI_KEY_RIGHT 1004
-
-// --- STRUCT ESISTENTI ---
 
 typedef struct {
     int id;
@@ -121,9 +118,7 @@ void tuiDrawButton(TuiButton* button);
 int projectX(double x);
 int projectY(double y);
 
-void tuiPrinterInt(void* data);
-void tuiPrinterString(void* data);
-void tuiDrawArray(int x, int y, Array arr, void (*printFunc)(void*));
+void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool showHeader);
 void tuiDrawSLinkedList(int x, int y, SLinkedList* list, void (*printFunc)(void*));
 void tuiDrawDLinkedList(int x, int y, DLinkedList* list, void (*printFunc)(void*));
 void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*));
@@ -138,5 +133,18 @@ void tuiPlotPoint(double x, double y, const char* c);
 void tuiPlotLine(double x1, double y1, double x2, double y2);
 void tuiPlotFunc(double (*func)(double), double step);
 void tuiPlotAxes();
+
+int tuiPrinterInt(void* data, bool dryRun);
+int tuiPrinterUInt(void* data, bool dryRun);
+int tuiPrinterSizeT(void* data, bool dryRun);
+int tuiPrinterFloat(void* data, bool dryRun);
+int tuiPrinterDouble(void* data, bool dryRun);
+int tuiPrinterChar(void* data, bool dryRun);
+int tuiPrinterBool(void* data, bool dryRun);
+int tuiPrinterString(void* data, bool dryRun);
+int tuiPrinterCString(void* data, bool dryRun);
+void tuiSetSearchTerm(char* term);
+int tuiPrinterStringHighlight(void* data, bool dryRun);
+int tuiPrinterCStringHighlight(void* data, bool dryRun);
 
 #endif

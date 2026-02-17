@@ -26,5 +26,6 @@ bool fileSetBytes(File f, Array bytes);
 bool fileAppend(File f, String s);
 bool fileWriteLines(File f, Array lines);
 bool fileSetLine(File f, String line, size_t lineIndex);
+Array fileGetList(const char* dir, bool hidden);
 
 #endif
