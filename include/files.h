@@ -6,11 +6,7 @@
 #include "strings.h"
 #include "arrays.h"
 
-typedef struct {
-    FILE* fp;
-    size_t size;
-} FileStruct;
-
+typedef struct FileStruct FileStruct;
 typedef FileStruct* File;
 
 File fileOpen(const char* filename, bool empty);
@@ -27,5 +23,6 @@ bool fileAppend(File f, String s);
 bool fileWriteLines(File f, Array lines);
 bool fileSetLine(File f, String line, size_t lineIndex);
 Array fileGetList(const char* dir, bool hidden);
+String fileGetAbsPath(File f);
 
 #endif

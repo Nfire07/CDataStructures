@@ -2,6 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <limits.h>
+
+#ifdef _WIN32
+    #include <direct.h>
+    #define GetCurrentDir _getcwd
+    #define realpath(N,R) _fullpath((R),(N),_MAX_PATH)
+#else
+    #include <unistd.h>
+    #define GetCurrentDir getcwd
+#endif
+
 #include "../include/files.h"
 #include "../include/pointers.h"
 #include "../include/strings.h"
@@ -10,6 +21,7 @@
 struct FileStruct {
     FILE* fp;
     size_t size;
+    char* path;
 };
 
 static bool fileCheck(File f) {
@@ -29,6 +41,13 @@ File fileOpen(const char* filename, bool writeMode) {
     File f = (File)xMalloc(sizeof(struct FileStruct));
     if (f == NULL) return NULL;
 
+    f->path = (char*)xMalloc(strlen(filename) + 1);
+    if (f->path == NULL) {
+        xFree(f);
+        return NULL;
+    }
+    strcpy(f->path, filename);
+
     if (writeMode) {
         f->fp = fopen(filename, "w+b");
         f->size = 0;
@@ -37,6 +56,7 @@ File fileOpen(const char* filename, bool writeMode) {
     }
 
     if (f->fp == NULL) {
+        xFree(f->path);
         xFree(f);
         return NULL;
     }
@@ -44,12 +64,14 @@ File fileOpen(const char* filename, bool writeMode) {
     if (!writeMode) {
         if (fseek(f->fp, 0, SEEK_END) != 0) {
             fclose(f->fp);
+            xFree(f->path);
             xFree(f);
             return NULL;
         }
         long fsize = ftell(f->fp);
         if (fsize < 0) {
             fclose(f->fp);
+            xFree(f->path);
             xFree(f);
             return NULL;
         }
@@ -64,6 +86,9 @@ void fileClose(File f) {
     if (null(f)) return;
     if (f->fp != NULL) {
         fclose(f->fp);
+    }
+    if (f->path != NULL) {
+        xFree(f->path);
     }
     xFree(f);
 }
@@ -319,4 +344,16 @@ Array fileGetList(const char* dirPath, bool hidden) {
 
     closedir(d);
     return list;
+}
+
+
+String fileGetAbsPath(File f) {
+    if (!fileCheck(f) || f->path == NULL) return NULL;
+
+    char buffer[4096]; 
+    if (realpath(f->path, buffer) == NULL) {
+        return NULL;
+    }
+
+    return stringNew(buffer);
 }
