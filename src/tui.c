@@ -817,6 +817,12 @@ void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*)) {
     }
 }
 
+struct FileStruct {
+    FILE* fp;
+    size_t size;
+    char* path;
+};
+
 void tuiDrawFileInfo(int x, int y, File f) {
     tuiGoToXY(x, y);
     tuiColor(TUI_BLUE);
