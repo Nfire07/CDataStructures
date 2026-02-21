@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <math.h> 
+#include <math.h>
 #include <signal.h>
 
 #ifdef _WIN32
@@ -25,19 +25,19 @@ static int _internalTermWidth = 80;
 static int _internalTermHeight = 24;
 static volatile sig_atomic_t _resizedFlag = 0;
 static TuiViewport _viewport = {-10.0, 10.0, -10.0, 10.0};
+static bool _rawMode = true;
 
 #ifndef _WIN32
 static struct termios orig_termios;
 
 static void disableRawMode() {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
-    printf("\033[?25h"); 
+    printf("\033[?25h");
 }
 
 static void enableRawMode() {
     tcgetattr(STDIN_FILENO, &orig_termios);
     atexit(disableRawMode);
-    
     struct termios raw = orig_termios;
     raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     raw.c_oflag &= ~(OPOST);
@@ -45,7 +45,6 @@ static void enableRawMode() {
     raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 0;
-    
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 #endif
@@ -70,8 +69,8 @@ static void _updateDimensions() {
 }
 
 void tuiInit() {
+    _rawMode = false;
     signal(SIGINT, _tuiSignalHandler);
-    
 #ifndef _WIN32
     signal(SIGWINCH, _tuiSignalHandler);
     enableRawMode();
@@ -83,10 +82,8 @@ void tuiInit() {
     dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     SetConsoleMode(hOut, dwMode | ENABLE_PROCESSED_INPUT);
 #endif
-
     tuiCursorVisible(false);
     tuiClearScreen();
-    
     _updateDimensions();
 }
 
@@ -160,7 +157,6 @@ void tuiColorRGB(short r, short g, short b) {
 void tuiColorHEX(const char* hexColorCode) {
     String fullHex = stringNew(hexColorCode);
     if (stringIsNull(fullHex)) return;
-
     String cleanHex;
     if (stringCharAt(fullHex, 0) == '#') {
         cleanHex = stringSubstring(fullHex, 1, fullHex->len);
@@ -168,22 +164,17 @@ void tuiColorHEX(const char* hexColorCode) {
         cleanHex = stringNew(fullHex->data);
     }
     stringFree(fullHex);
-
     if (cleanHex->len < 6) {
         stringFree(cleanHex);
         return;
     }
-
     String rStr = stringSubstring(cleanHex, 0, 2);
     String gStr = stringSubstring(cleanHex, 2, 4);
     String bStr = stringSubstring(cleanHex, 4, 6);
-
     int r = stringParseHex(rStr);
     int g = stringParseHex(gStr);
     int b = stringParseHex(bStr);
-
     tuiColorRGB((short)r, (short)g, (short)b);
-
     stringFree(cleanHex);
     stringFree(rStr);
     stringFree(gStr);
@@ -200,8 +191,8 @@ static void _tuiPrintRepeat(const char* s, int times) {
     }
 }
 
-void tuiPrintRepeat(const char* s, int times){
-    _tuiPrintRepeat(s,times);
+void tuiPrintRepeat(const char* s, int times) {
+    _tuiPrintRepeat(s, times);
 }
 
 static void _tuiPrintBorder(int* widths, size_t cols, const char* left, const char* mid, const char* right, const char* dash) {
@@ -231,7 +222,6 @@ static int _projectY(double y) {
 
 static int _tuiGetMaxColWidth(Array headers, Array rows, size_t colIndex) {
     int maxW = 0;
-    
     if (colIndex < headers->len) {
         String* hPtr = (String*)arrayGetRef(headers, colIndex);
         if (hPtr && *hPtr) {
@@ -239,7 +229,6 @@ static int _tuiGetMaxColWidth(Array headers, Array rows, size_t colIndex) {
             if (len > maxW) maxW = len;
         }
     }
-
     for (size_t i = 0; i < rows->len; i++) {
         Array* rowPtr = (Array*)arrayGetRef(rows, i);
         if (rowPtr && *rowPtr) {
@@ -258,20 +247,15 @@ static int _tuiGetMaxColWidth(Array headers, Array rows, size_t colIndex) {
 
 void tuiDrawTable(int x, int y, Array headers, Array rows) {
     if (!headers || !rows) return;
-
     size_t cols = headers->len;
     if (cols == 0) return;
-
     int* widths = (int*)xCalloc(cols, sizeof(int));
     for (size_t i = 0; i < cols; i++) {
         widths[i] = _tuiGetMaxColWidth(headers, rows, i);
     }
-
     int currentY = y;
-
     tuiGoToXY(x, currentY++);
     _tuiPrintBorder(widths, cols, "┌", "┬", "┐", "─");
-
     tuiGoToXY(x, currentY++);
     printf("│");
     for (size_t i = 0; i < cols; i++) {
@@ -280,25 +264,20 @@ void tuiDrawTable(int x, int y, Array headers, Array rows) {
         char* data = (h) ? stringGetData(h) : "";
         int len = (h) ? (int)stringLength(h) : 0;
         int padding = widths[i] - len;
-
         printf(" \033[1m%s\033[22m ", data);
         _tuiPrintRepeat(" ", padding);
         printf("│");
     }
-
     tuiGoToXY(x, currentY++);
     _tuiPrintBorder(widths, cols, "├", "┼", "┤", "─");
-
     for (size_t i = 0; i < rows->len; i++) {
         tuiGoToXY(x, currentY++);
         Array* rowPtr = (Array*)arrayGetRef(rows, i);
         Array row = (rowPtr) ? *rowPtr : NULL;
-        
         printf("│");
         for (size_t j = 0; j < cols; j++) {
             char* valStr = "";
             int len = 0;
-
             if (row && j < row->len) {
                 String* cellPtr = (String*)arrayGetRef(row, j);
                 if (cellPtr && *cellPtr) {
@@ -306,29 +285,24 @@ void tuiDrawTable(int x, int y, Array headers, Array rows) {
                     len = (int)stringLength(*cellPtr);
                 }
             }
-
             int padding = widths[j] - len;
-            
             printf(" %s", valStr);
             _tuiPrintRepeat(" ", padding + 1);
             printf("│");
         }
     }
-
     tuiGoToXY(x, currentY++);
     _tuiPrintBorder(widths, cols, "└", "┴", "┘", "─");
-
     xFree(widths);
 }
 
 int tuiReadKey() {
     int key = TUI_KEY_NONE;
-
 #ifdef _WIN32
     if (_kbhit()) {
         int ch = _getch();
-        if (ch == 0 || ch == 224) { 
-            ch = _getch(); 
+        if (ch == 0 || ch == 224) {
+            ch = _getch();
             switch (ch) {
                 case 72: key = TUI_KEY_UP; break;
                 case 80: key = TUI_KEY_DOWN; break;
@@ -338,10 +312,10 @@ int tuiReadKey() {
             }
         } else {
             switch (ch) {
-                case 8: key = TUI_KEY_BACKSPACE; break;
+                case 8:  key = TUI_KEY_BACKSPACE; break;
                 case 13: key = TUI_KEY_ENTER; break;
                 case 27: key = TUI_KEY_ESC; break;
-                case 9: key = TUI_KEY_TAB; break;
+                case 9:  key = TUI_KEY_TAB; break;
                 default: key = ch; break;
             }
         }
@@ -349,16 +323,13 @@ int tuiReadKey() {
 #else
     unsigned char c;
     ssize_t nread = read(STDIN_FILENO, &c, 1);
-
     if (nread > 0) {
         if (c == 27) {
             struct timeval timeout = {0, 0};
             fd_set readfds;
             FD_ZERO(&readfds);
             FD_SET(STDIN_FILENO, &readfds);
-            
             int result = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout);
-            
             if (result > 0) {
                 char seq[2];
                 if (read(STDIN_FILENO, &seq[0], 1) == 1 && read(STDIN_FILENO, &seq[1], 1) == 1) {
@@ -368,7 +339,7 @@ int tuiReadKey() {
                             case 'B': key = TUI_KEY_DOWN; break;
                             case 'C': key = TUI_KEY_RIGHT; break;
                             case 'D': key = TUI_KEY_LEFT; break;
-                            default: key = TUI_KEY_ESC; break;
+                            default:  key = TUI_KEY_ESC; break;
                         }
                     } else {
                         key = TUI_KEY_ESC;
@@ -380,10 +351,10 @@ int tuiReadKey() {
         } else {
             switch (c) {
                 case 127:
-                case 8: key = TUI_KEY_BACKSPACE; break;
+                case 8:  key = TUI_KEY_BACKSPACE; break;
                 case 10:
                 case 13: key = TUI_KEY_ENTER; break;
-                case 9: key = TUI_KEY_TAB; break;
+                case 9:  key = TUI_KEY_TAB; break;
                 default: key = c; break;
             }
         }
@@ -422,65 +393,53 @@ void tuiInputFree(TuiInput* input) {
 
 void tuiDrawInput(TuiInput* input) {
     if (!input) return;
-
     tuiGoToXY(input->x, input->y);
     tuiStyle(TUI_STYLE_BOLD);
     if (input->isFocused) tuiColor(TUI_CYAN);
     else tuiColor(TUI_WHITE);
     printf("%s", input->label);
     tuiStyle(TUI_STYLE_RESET);
-
     if (input->isFocused) tuiColor(TUI_CYAN);
     else tuiColor(TUI_WHITE);
-
     tuiGoToXY(input->x, input->y + 1);
     printf("╭");
     _tuiPrintRepeat("─", input->width);
     printf("╮");
-
     tuiGoToXY(input->x, input->y + 2);
     printf("│");
-    
     tuiStyle(TUI_STYLE_BOLD);
     tuiColor(TUI_WHITE);
-    
     if (input->isPassword) {
-        for(size_t i = 0; i < input->currentLen; i++) {
+        for (size_t i = 0; i < input->currentLen; i++) {
             printf("*");
         }
     } else {
         printf("%s", input->buffer);
     }
-
     tuiStyle(TUI_STYLE_RESET);
     if (input->isFocused) tuiColor(TUI_CYAN);
     else tuiColor(TUI_WHITE);
-
     int padding = input->width - (int)input->currentLen;
     if (input->isFocused) {
-        printf("\033[5m_\033[25m"); 
+        printf("\033[5m_\033[25m");
         padding--;
     }
-    
     _tuiPrintRepeat(" ", padding > 0 ? padding : 0);
     printf("│");
-
     tuiGoToXY(input->x, input->y + 3);
     printf("╰");
     _tuiPrintRepeat("─", input->width);
     printf("╯");
-
     tuiColor(TUI_DEFAULT);
 }
 
 void tuiUpdateInput(TuiInput* input, int key) {
     if (!input || !input->isFocused || key == TUI_KEY_NONE) return;
-
     if (key == TUI_KEY_BACKSPACE) {
         if (input->currentLen > 0) {
             input->buffer[--input->currentLen] = '\0';
         }
-    } else if (key >= 32 && key <= 126) { 
+    } else if (key >= 32 && key <= 126) {
         if (input->currentLen < input->bufferSize - 1 && input->currentLen < (size_t)input->width - 1) {
             input->buffer[input->currentLen++] = (char)key;
             input->buffer[input->currentLen] = '\0';
@@ -500,14 +459,11 @@ TuiContainer tuiContainerCreate(int x, int y, int width, int height, const char*
 
 void tuiDrawContainer(TuiContainer* container) {
     if (!container) return;
-
     tuiGoToXY(container->x, container->y);
     tuiColor(TUI_WHITE);
     printf("┌");
-    
     int titleLen = (int)strlen(container->title);
     int dashLen = container->width - 2;
-    
     if (titleLen > 0 && titleLen < dashLen) {
         printf(" %s ", container->title);
         _tuiPrintRepeat("─", dashLen - titleLen - 2);
@@ -515,14 +471,12 @@ void tuiDrawContainer(TuiContainer* container) {
         _tuiPrintRepeat("─", dashLen);
     }
     printf("┐");
-
     for (int i = 1; i < container->height - 1; i++) {
         tuiGoToXY(container->x, container->y + i);
         printf("│");
         tuiGoToXY(container->x + container->width - 1, container->y + i);
         printf("│");
     }
-
     tuiGoToXY(container->x, container->y + container->height - 1);
     printf("└");
     _tuiPrintRepeat("─", container->width - 2);
@@ -542,9 +496,7 @@ TuiButton tuiButtonCreate(int id, int x, int y, int width, const char* label) {
 
 void tuiDrawButton(TuiButton* button) {
     if (!button) return;
-
     tuiGoToXY(button->x, button->y);
-    
     if (button->isFocused) {
         tuiBackground(TUI_BLUE);
         tuiColor(TUI_WHITE);
@@ -554,20 +506,15 @@ void tuiDrawButton(TuiButton* button) {
         tuiColor(TUI_WHITE);
         tuiStyle(TUI_STYLE_RESET);
     }
-
     printf("[");
-    
     int labelLen = (int)strlen(button->label);
     int totalPadding = button->width - 2 - labelLen;
     int padLeft = totalPadding / 2;
     int padRight = totalPadding - padLeft;
-
     _tuiPrintRepeat(" ", padLeft);
     printf("%s", button->label);
     _tuiPrintRepeat(" ", padRight);
-    
     printf("]");
-
     tuiStyle(TUI_STYLE_RESET);
     tuiBackground(TUI_DEFAULT);
     tuiColor(TUI_DEFAULT);
@@ -581,7 +528,6 @@ void tuiDrawStringObject(int x, int y, String s) {
         tuiColor(TUI_DEFAULT);
         return;
     }
-
     tuiColor(TUI_CYAN);
     printf("String");
     tuiColor(TUI_WHITE);
@@ -593,9 +539,7 @@ void tuiDrawStringObject(int x, int y, String s) {
 
 void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool showHeader) {
     if (!arr) return;
-
     int maxContentLen = 0;
-    
     if (!printFunc) {
         maxContentLen = 1;
     } else {
@@ -606,14 +550,11 @@ void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool s
             }
         }
     }
-
     int cellWidth = (maxContentLen < 3) ? 3 : maxContentLen;
     int totalLen = arr->len;
     int termWidth = tuiGetTerminalWidth();
     int requiredWidth = (totalLen * (cellWidth + 3)) + 1;
-
     int startY = y;
-
     if (showHeader) {
         tuiGoToXY(x, y);
         tuiColor(TUI_YELLOW);
@@ -622,41 +563,33 @@ void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool s
         printf(" [Len:%zu | Cap:%zu] ", arr->len, arr->capacity);
         startY = y + 1;
     }
-
     if ((x + requiredWidth) < termWidth) {
         tuiGoToXY(x, startY);
         printf("┌");
         for (int i = 0; i < totalLen; i++) {
-            tuiPrintRepeat("─", cellWidth + 2); 
+            tuiPrintRepeat("─", cellWidth + 2);
             if (i < totalLen - 1) printf("┬");
             else printf("┐");
         }
-
         tuiGoToXY(x, startY + 1);
         for (int i = 0; i < totalLen; i++) {
             int currentX = x + (i * (cellWidth + 3));
-            
             tuiGoToXY(currentX, startY + 1);
-            printf("│ "); 
-            
+            printf("│ ");
             int printedLen = 0;
             void* item = arrayGetRef(arr, i);
-            
             if (printFunc) {
-                printedLen = printFunc(item, false); 
+                printedLen = printFunc(item, false);
             } else {
                 printf("?");
                 printedLen = 1;
             }
-            
             int paddingRight = cellWidth - printedLen;
             if (paddingRight > 0) tuiPrintRepeat(" ", paddingRight);
-            
             printf(" ");
         }
         tuiGoToXY(x + (totalLen * (cellWidth + 3)), startY + 1);
         printf("│");
-
         tuiGoToXY(x, startY + 2);
         printf("└");
         for (int i = 0; i < totalLen; i++) {
@@ -664,11 +597,9 @@ void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool s
             if (i < totalLen - 1) printf("┴");
             else printf("┘");
         }
-
     } else {
         int currentY = startY;
-        
-        for (int i = 0; i < totalLen; i++) {    
+        for (int i = 0; i < totalLen; i++) {
             tuiGoToXY(x, currentY);
             if (i == 0) {
                 printf("┌");
@@ -679,28 +610,22 @@ void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool s
                 tuiPrintRepeat("─", cellWidth + 2);
                 printf("┤");
             }
-
             currentY++;
             tuiGoToXY(x, currentY);
             printf("│ ");
-            
             int printedLen = 0;
             void* item = arrayGetRef(arr, i);
-
             if (printFunc) {
                 printedLen = printFunc(item, false);
             } else {
                 printf("?");
                 printedLen = 1;
             }
-            
             int paddingRight = cellWidth - printedLen;
             if (paddingRight > 0) tuiPrintRepeat(" ", paddingRight);
-            
             printf(" │");
             currentY++;
         }
-
         tuiGoToXY(x, currentY);
         printf("└");
         tuiPrintRepeat("─", cellWidth + 2);
@@ -708,112 +633,352 @@ void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool s
     }
 }
 
-void tuiDrawSLinkedList(int x, int y, SLinkedList* list, void (*printFunc)(void*)) {
+static void _rawPrintRepeat(const char* s, int times) {
+    for (int i = 0; i < times; i++) printf("%s", s);
+}
+
+static void _tuiColorIf(short color) {
+    if (!_rawMode) tuiColor(color);
+}
+
+static void _tuiStyleIf(short style) {
+    if (!_rawMode) tuiStyle(style);
+}
+
+static void _tuiGoToXYIf(int x, int y) {
+    if (!_rawMode) tuiGoToXY(x, y);
+}
+
+void tuiDrawSLinkedList(int x, int y, SLinkedList* list, int (*printFunc)(void*, bool)) {
     if (!list) return;
 
-    tuiGoToXY(x, y);
-    tuiColor(TUI_MAGENTA);
+    int nodeW = 1;
+    if (printFunc) {
+        SLinkedListNode* cur = list->head;
+        while (cur) {
+            int w = printFunc(cur->data, true);
+            if (w > nodeW) nodeW = w;
+            cur = cur->next;
+        }
+    }
+    (void)nodeW;
+
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_MAGENTA);
     printf("SLinkedList");
-    tuiColor(TUI_WHITE);
+    _tuiColorIf(TUI_WHITE);
     printf(" [Len:%zu]", list->len);
+    if (_rawMode) printf("\n");
 
-    int curX = x;
-    int curY = y + 2;
+    _tuiGoToXYIf(x, y + 2);
+    if (_rawMode) printf("\n");
+
+    _tuiColorIf(TUI_WHITE);
+    printf("HEAD --> ");
+
     SLinkedListNode* current = list->head;
-
-    tuiGoToXY(curX, curY);
-    printf("HEAD ──> ");
-    curX += 9;
-
-    while (current != NULL) {
+    while (current) {
         printf("[ ");
+        _tuiStyleIf(TUI_STYLE_BOLD);
         if (printFunc) {
-            printFunc(current->data);
+            printFunc(current->data, false);
+        } else {
+            printf("?");
         }
-        printf(" ] ──> ");
-        
+        _tuiStyleIf(TUI_STYLE_RESET);
+        printf(" ] --> ");
         current = current->next;
     }
-    
-    tuiColor(TUI_RED);
+
+    _tuiColorIf(TUI_RED);
     printf("NULL");
-    tuiColor(TUI_DEFAULT);
+    _tuiColorIf(TUI_DEFAULT);
+    if (_rawMode) printf("\n");
 }
 
-void tuiDrawDLinkedList(int x, int y, DLinkedList* list, void (*printFunc)(void*)) {
+void tuiDrawDLinkedList(int x, int y, DLinkedList* list, int (*printFunc)(void*, bool)) {
     if (!list) return;
 
-    tuiGoToXY(x, y);
-    tuiColor(TUI_MAGENTA);
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_MAGENTA);
     printf("DLinkedList");
-    tuiColor(TUI_WHITE);
+    _tuiColorIf(TUI_WHITE);
     printf(" [Len:%zu]", list->len);
+    if (_rawMode) printf("\n");
 
-    int curX = x;
-    int curY = y + 2;
+    _tuiGoToXYIf(x, y + 2);
+    if (_rawMode) printf("\n");
+
+    _tuiColorIf(TUI_WHITE);
+    printf("HEAD <--> ");
+
     DLinkedListNode* current = list->head;
-
-    tuiGoToXY(curX, curY);
-    printf("HEAD <──> ");
-    
-    while (current != NULL) {
+    while (current) {
         printf("[ ");
+        _tuiStyleIf(TUI_STYLE_BOLD);
         if (printFunc) {
-            printFunc(current->data);
+            printFunc(current->data, false);
+        } else {
+            printf("?");
         }
-        printf(" ] <──> ");
+        _tuiStyleIf(TUI_STYLE_RESET);
+        printf(" ] <--> ");
         current = current->next;
     }
 
-    tuiColor(TUI_RED);
+    _tuiColorIf(TUI_RED);
     printf("NULL");
-    tuiColor(TUI_DEFAULT);
+    _tuiColorIf(TUI_DEFAULT);
+    if (_rawMode) printf("\n");
 }
 
-void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*)) {
+void tuiDrawStack(int x, int y, Stack* stack, int (*printFunc)(void*, bool)) {
     if (!stack) return;
 
-    tuiGoToXY(x, y);
-    tuiColor(TUI_GREEN);
+    int cellW = 4;
+    if (printFunc) {
+        SLinkedListNode* cur = stack->head;
+        while (cur) {
+            int w = printFunc(cur->data, true);
+            if (w > cellW) cellW = w;
+            cur = cur->next;
+        }
+    }
+    int boxInner = cellW + 2;
+
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_GREEN);
     printf("Stack");
-    tuiColor(TUI_WHITE);
+    _tuiColorIf(TUI_WHITE);
     printf(" (Top -> Bottom)");
+    if (_rawMode) printf("\n");
 
     SLinkedListNode* current = stack->head;
     int curY = y + 1;
 
-    if (current == NULL) {
-        tuiGoToXY(x, curY++);
-        printf("┌──────────────┐");
-        tuiGoToXY(x, curY++);
-        printf("│    EMPTY     │");
-        tuiGoToXY(x, curY++);
-        printf("└──────────────┘");
+    if (!current) {
+        _tuiGoToXYIf(x, curY++);
+        printf("┌"); _rawPrintRepeat("─", boxInner); printf("┐");
+        if (_rawMode) printf("\n");
+        _tuiGoToXYIf(x, curY++);
+        {
+            int pad = boxInner - 5;
+            int padL = pad / 2, padR = pad - padL;
+            printf("│"); _rawPrintRepeat(" ", padL);
+            printf("EMPTY");
+            _rawPrintRepeat(" ", padR); printf("│");
+        }
+        if (_rawMode) printf("\n");
+        _tuiGoToXYIf(x, curY++);
+        printf("└"); _rawPrintRepeat("─", boxInner); printf("┘");
+        if (_rawMode) printf("\n");
         return;
     }
 
-    tuiGoToXY(x, curY++);
-    printf("      │  │"); 
-    
-    while (current != NULL) {
-        tuiGoToXY(x, curY++);
-        printf("┌─────▼──▼─────┐");
-        tuiGoToXY(x, curY++);
+    _tuiGoToXYIf(x, curY++);
+    {
+        int arrowOff = (boxInner + 2) / 2 - 1;
+        _rawPrintRepeat(" ", arrowOff);
+        printf("│  │");
+    }
+    if (_rawMode) printf("\n");
+
+    while (current) {
+        _tuiGoToXYIf(x, curY++);
+        {
+            int total = boxInner + 2;
+            int half  = total / 2 - 1;
+            printf("┌");
+            _rawPrintRepeat("─", half - 1);
+            printf("▼──▼");
+            int right = total - 2 - half - 3;
+            if (right < 0) right = 0;
+            _rawPrintRepeat("─", right);
+            printf("┐");
+        }
+        if (_rawMode) printf("\n");
+
+        _tuiGoToXYIf(x, curY);
         printf("│ ");
-        
+        _tuiStyleIf(TUI_STYLE_BOLD);
+        _tuiColorIf(TUI_WHITE);
+
+        int printed = 0;
         if (printFunc) {
-            printFunc(current->data);
+            printed = printFunc(current->data, false);
         } else {
             printf("????");
+            printed = 4;
         }
+        _tuiStyleIf(TUI_STYLE_RESET);
+        _tuiColorIf(TUI_DEFAULT);
 
-        tuiGoToXY(x + 15, curY - 1);
-        printf("│");
-        
-        tuiGoToXY(x, curY++);
-        printf("└──────────────┘");
-        
+        int padding = cellW - printed;
+        if (padding > 0) _rawPrintRepeat(" ", padding);
+        printf(" │");
+        curY++;
+        if (_rawMode) printf("\n");
+
+        _tuiGoToXYIf(x, curY++);
+        printf("└"); _rawPrintRepeat("─", boxInner); printf("┘");
+        if (_rawMode) printf("\n");
+
         current = current->next;
+    }
+}
+
+static void _tuiDrawTreeNodeEx(TreeNode* node, int x, int y, int offset, int (*printFunc)(void*, bool)) {
+    if (!node) return;
+    tuiGoToXY(x, y);
+    printf("(");
+    tuiStyle(TUI_STYLE_BOLD);
+    tuiColor(TUI_CYAN);
+    if (printFunc) printFunc(node->data, false);
+    else printf("?");
+    tuiColor(TUI_DEFAULT);
+    tuiStyle(TUI_STYLE_RESET);
+    printf(")");
+    if (offset < 2) offset = 2;
+    if (node->left) {
+        int childX = x - offset;
+        int childY = y + 2;
+        tuiGoToXY(x - 1, y + 1);
+        printf("┌");
+        for (int k = 0; k < (x - 1) - childX; k++) {
+            tuiGoToXY(x - 2 - k, y + 1);
+            printf("─");
+        }
+        tuiGoToXY(childX, y + 1);
+        printf("┐");
+        _tuiDrawTreeNodeEx(node->left, childX, childY, offset / 2, printFunc);
+    }
+    if (node->right) {
+        int childX = x + offset;
+        int childY = y + 2;
+        tuiGoToXY(x + 1, y + 1);
+        printf("┐");
+        for (int k = 0; k < childX - (x + 1); k++) {
+            tuiGoToXY(x + 2 + k, y + 1);
+            printf("─");
+        }
+        tuiGoToXY(childX, y + 1);
+        printf("┌");
+        _tuiDrawTreeNodeEx(node->right, childX, childY, offset / 2, printFunc);
+    }
+}
+
+static void _tuiPrintTreeRaw(TreeNode* node, int (*printFunc)(void*, bool), int depth, bool isLeft) {
+    if (!node) return;
+    _tuiPrintTreeRaw(node->right, printFunc, depth + 1, false);
+    for (int i = 0; i < depth; i++) printf("    ");
+    printf(isLeft ? "\\-- " : "/-- ");
+    if (printFunc) printFunc(node->data, false);
+    else printf("?");
+    printf("\n");
+    _tuiPrintTreeRaw(node->left, printFunc, depth + 1, true);
+}
+
+void tuiDrawTree(int x, int y, Tree t, int (*printFunc)(void*, bool)) {
+    if (!t) return;
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_MAGENTA);
+    printf("Binary Tree");
+    _tuiColorIf(TUI_WHITE);
+    printf(" [Count:%zu | H:%zu]", treeSize(t), treeHeight(t));
+    if (_rawMode) printf("\n");
+    if (!t->root) {
+        _tuiGoToXYIf(x, y + 2);
+        printf("( Empty )");
+        if (_rawMode) printf("\n");
+        return;
+    }
+    if (_rawMode) {
+        _tuiPrintTreeRaw(t->root, printFunc, 0, false);
+        return;
+    }
+    size_t h = treeHeight(t);
+    int initialOffset = (int)(1 << (h - 1)) * 3;
+    if (initialOffset < 10) initialOffset = 10;
+    if (initialOffset > 40) initialOffset = 40;
+    _tuiDrawTreeNodeEx(t->root, x, y + 2, initialOffset, printFunc);
+}
+
+void tuiDrawHashMap(int x, int y, HashMap map, int (*printKey)(void*, bool), int (*printVal)(void*, bool)) {
+    if (!map) return;
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_CYAN);
+    printf("HashMap");
+    _tuiColorIf(TUI_WHITE);
+    printf(" [Size:%zu | Buckets:%zu]", map->count, map->capacity);
+    if (_rawMode) printf("\n");
+    int currentY = y + 2;
+    for (size_t i = 0; i < map->capacity; i++) {
+        _tuiGoToXYIf(x, currentY);
+        _tuiColorIf(TUI_YELLOW);
+        printf("[%02zu]", i);
+        _tuiColorIf(TUI_DEFAULT);
+        MapEntry* entry = map->buckets[i];
+        if (!entry) {
+            _tuiColorIf(TUI_WHITE);
+            printf(" - NULL");
+        } else {
+            while (entry) {
+                printf(" -> ");
+                _tuiStyleIf(TUI_STYLE_BOLD);
+                printf("[");
+                _tuiColorIf(TUI_GREEN);
+                if (printKey) printKey(entry->key, false);
+                else printf("K");
+                _tuiColorIf(TUI_WHITE);
+                printf(":");
+                _tuiColorIf(TUI_CYAN);
+                if (printVal) printVal(entry->value, false);
+                else printf("V");
+                _tuiColorIf(TUI_DEFAULT);
+                printf("]");
+                _tuiStyleIf(TUI_STYLE_RESET);
+                entry = entry->next;
+            }
+        }
+        if (_rawMode) printf("\n");
+        currentY++;
+    }
+}
+
+void tuiDrawSet(int x, int y, Set set, int (*printKey)(void*, bool)) {
+    if (!set) return;
+    _tuiGoToXYIf(x, y);
+    _tuiColorIf(TUI_CYAN);
+    printf("HashSet");
+    _tuiColorIf(TUI_WHITE);
+    printf(" [Size:%zu | Buckets:%zu]", set->map->count, set->map->capacity);
+    if (_rawMode) printf("\n");
+    int currentY = y + 2;
+    HashMap map = set->map;
+    for (size_t i = 0; i < map->capacity; i++) {
+        _tuiGoToXYIf(x, currentY);
+        _tuiColorIf(TUI_YELLOW);
+        printf("[%02zu]", i);
+        _tuiColorIf(TUI_DEFAULT);
+        MapEntry* entry = map->buckets[i];
+        if (!entry) {
+            _tuiColorIf(TUI_WHITE);
+            printf(" - *");
+        } else {
+            while (entry) {
+                printf(" -> ");
+                _tuiStyleIf(TUI_STYLE_BOLD);
+                printf("(");
+                _tuiColorIf(TUI_GREEN);
+                if (printKey) printKey(entry->key, false);
+                _tuiColorIf(TUI_DEFAULT);
+                printf(")");
+                _tuiStyleIf(TUI_STYLE_RESET);
+                entry = entry->next;
+            }
+        }
+        if (_rawMode) printf("\n");
+        currentY++;
     }
 }
 
@@ -828,7 +993,6 @@ void tuiDrawFileInfo(int x, int y, File f) {
     tuiColor(TUI_BLUE);
     printf("File Info");
     tuiStyle(TUI_STYLE_RESET);
-
     tuiGoToXY(x, y + 1);
     printf("┌──────────────────────┐");
     tuiGoToXY(x, y + 2);
@@ -842,178 +1006,10 @@ void tuiDrawFileInfo(int x, int y, File f) {
     }
     tuiColor(TUI_DEFAULT);
     printf("│");
-    
     tuiGoToXY(x, y + 3);
     printf("│ Size:   %-10zu   │", (f ? f->size : 0));
-    
     tuiGoToXY(x, y + 4);
     printf("└──────────────────────┘");
-}
-
-static void _tuiDrawTreeNode(TreeNode* node, int x, int y, int offset, void (*printFunc)(void*)) {
-    if (!node) return;
-
-    tuiGoToXY(x, y);
-    
-    printf("(");
-    tuiStyle(TUI_STYLE_BOLD);
-    tuiColor(TUI_CYAN);
-    if (printFunc) printFunc(node->data);
-    else printf("?");
-    tuiColor(TUI_DEFAULT);
-    tuiStyle(TUI_STYLE_RESET);
-    printf(")");
-
-    if (offset < 2) offset = 2; 
-
-    if (node->left) {
-        int childX = x - offset;
-        int childY = y + 2;
-        
-        tuiGoToXY(x - 1, y + 1);
-        printf("┌"); 
-        int dashLen = (x - 1) - childX;
-        for(int k=0; k<dashLen; k++) {
-             tuiGoToXY(x - 2 - k, y + 1);
-             printf("─");
-        }
-        tuiGoToXY(childX, y + 1);
-        printf("┐");
-
-        _tuiDrawTreeNode(node->left, childX, childY, offset / 2, printFunc);
-    }
-
-    if (node->right) {
-        int childX = x + offset;
-        int childY = y + 2;
-
-        tuiGoToXY(x + 1, y + 1);
-        printf("┐");
-        int dashLen = childX - (x + 1);
-        for(int k=0; k<dashLen; k++) {
-             tuiGoToXY(x + 2 + k, y + 1);
-             printf("─");
-        }
-        tuiGoToXY(childX, y + 1);
-        printf("┌");
-
-        _tuiDrawTreeNode(node->right, childX, childY, offset / 2, printFunc);
-    }
-}
-
-void tuiDrawTree(int x, int y, Tree t, void (*printFunc)(void*)) {
-    if (!t) return;
-    
-    tuiGoToXY(x, y);
-    tuiColor(TUI_MAGENTA);
-    printf("Binary Tree");
-    tuiColor(TUI_WHITE);
-    printf(" [Count:%zu | H:%zu]", treeSize(t), treeHeight(t));
-
-    if (t->root == NULL) {
-        tuiGoToXY(x, y + 2);
-        printf("( Empty )");
-        return;
-    }
-
-    size_t h = treeHeight(t);
-    int initialOffset = (int)(1 << (h - 1)) * 3; 
-    if (initialOffset < 10) initialOffset = 10;
-    if (initialOffset > 40) initialOffset = 40;
-
-    _tuiDrawTreeNode(t->root, x, y + 2, initialOffset, printFunc);
-}
-
-void tuiDrawHashMap(int x, int y, HashMap map, void (*printKey)(void*), void (*printVal)(void*)) {
-    if (!map) return;
-
-    tuiGoToXY(x, y);
-    tuiColor(TUI_CYAN);
-    printf("HashMap");
-    tuiColor(TUI_WHITE);
-    printf(" [Size:%zu | Buckets:%zu]", map->count, map->capacity);
-
-    int currentY = y + 2;
-
-    for (size_t i = 0; i < map->capacity; i++) {
-        tuiGoToXY(x, currentY);
-        
-        tuiColor(TUI_YELLOW);
-        printf("[%02zu]", i);
-        tuiColor(TUI_DEFAULT);
-        
-        MapEntry* entry = map->buckets[i];
-        
-        if (entry == NULL) {
-            tuiColor(TUI_WHITE);
-            printf(" ─ NULL");
-        } else {
-            while (entry) {
-                printf(" ─> ");
-                
-                tuiStyle(TUI_STYLE_BOLD);
-                printf("[");
-                
-                tuiColor(TUI_GREEN);
-                if (printKey) printKey(entry->key);
-                else printf("K");
-                
-                tuiColor(TUI_WHITE);
-                printf(":");
-                
-                tuiColor(TUI_CYAN);
-                if (printVal) printVal(entry->value);
-                else printf("V");
-                
-                tuiColor(TUI_DEFAULT);
-                printf("]");
-                tuiStyle(TUI_STYLE_RESET);
-
-                entry = entry->next;
-            }
-        }
-        currentY++;
-    }
-}
-
-void tuiDrawSet(int x, int y, Set set, void (*printKey)(void*)) {
-    if (!set) return;
-
-    tuiGoToXY(x, y);
-    tuiColor(TUI_CYAN);
-    printf("HashSet");
-    tuiColor(TUI_WHITE);
-    printf(" [Size:%zu | Buckets:%zu]", set->map->count, set->map->capacity);
-
-    int currentY = y + 2;
-    HashMap map = set->map;
-
-    for (size_t i = 0; i < map->capacity; i++) {
-        tuiGoToXY(x, currentY);
-        tuiColor(TUI_YELLOW);
-        printf("[%02zu]", i);
-        tuiColor(TUI_DEFAULT);
-        
-        MapEntry* entry = map->buckets[i];
-        
-        if (entry == NULL) {
-            tuiColor(TUI_WHITE); 
-            printf(" ─ •");
-        } else {
-            while (entry) {
-                printf(" ─> ");
-                tuiStyle(TUI_STYLE_BOLD);
-                printf("(");
-                tuiColor(TUI_GREEN);
-                if (printKey) printKey(entry->key);
-                tuiColor(TUI_DEFAULT);
-                printf(")");
-                tuiStyle(TUI_STYLE_RESET);
-                entry = entry->next;
-            }
-        }
-        currentY++;
-    }
 }
 
 void tuiDrawPixel(int x, int y, const char* c) {
@@ -1027,9 +1023,8 @@ void tuiDrawLine(int x0, int y0, int x1, int y1) {
     int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int err = dx + dy, e2;
-
     while (1) {
-        tuiDrawPixel(x0, y0, "*"); 
+        tuiDrawPixel(x0, y0, "*");
         if (x0 == x1 && y0 == y1) break;
         e2 = 2 * err;
         if (e2 >= dy) { err += dy; x0 += sx; }
@@ -1039,7 +1034,6 @@ void tuiDrawLine(int x0, int y0, int x1, int y1) {
 
 void tuiDrawRect(int x, int y, int w, int h) {
     if (w <= 0 || h <= 0) return;
-
     if (w == 1) {
         for (int i = 0; i < h; i++) tuiDrawPixel(x, y + i, "│");
         return;
@@ -1048,27 +1042,23 @@ void tuiDrawRect(int x, int y, int w, int h) {
         for (int i = 0; i < w; i++) tuiDrawPixel(x + i, y, "─");
         return;
     }
-
     tuiDrawPixel(x, y, "┌");
     tuiDrawPixel(x + w - 1, y, "┐");
     tuiDrawPixel(x, y + h - 1, "└");
     tuiDrawPixel(x + w - 1, y + h - 1, "┘");
-
     for (int i = 1; i < w - 1; i++) {
         tuiDrawPixel(x + i, y, "─");
         tuiDrawPixel(x + i, y + h - 1, "─");
     }
-
     for (int i = 1; i < h - 1; i++) {
-        tuiDrawPixel(x, y + i, "│");             
-        tuiDrawPixel(x + w - 1, y + i, "│");  
+        tuiDrawPixel(x, y + i, "│");
+        tuiDrawPixel(x + w - 1, y + i, "│");
     }
 }
 
 void tuiPlotPoint(double x, double y, const char* c) {
-    if (x < _viewport.minX || x > _viewport.maxX || 
+    if (x < _viewport.minX || x > _viewport.maxX ||
         y < _viewport.minY || y > _viewport.maxY) return;
-        
     tuiDrawPixel(projectX(x), projectY(y), c);
 }
 
@@ -1079,19 +1069,17 @@ void tuiPlotLine(double x1, double y1, double x2, double y2) {
 void tuiPlotAxes() {
     if (_viewport.minX <= 0 && _viewport.maxX >= 0) {
         int screenX = projectX(0.0);
-        for(int y = 0; y < _internalTermHeight; y++) {
+        for (int y = 0; y < _internalTermHeight; y++) {
             tuiDrawPixel(screenX, y, "│");
         }
     }
-    
     if (_viewport.minY <= 0 && _viewport.maxY >= 0) {
         int screenY = projectY(0.0);
-        for(int x = 0; x < _internalTermWidth; x++) {
+        for (int x = 0; x < _internalTermWidth; x++) {
             tuiDrawPixel(x, screenY, "─");
         }
     }
-    
-    if (_viewport.minX <= 0 && _viewport.maxX >= 0 && 
+    if (_viewport.minX <= 0 && _viewport.maxX >= 0 &&
         _viewport.minY <= 0 && _viewport.maxY >= 0) {
         tuiDrawPixel(projectX(0), projectY(0), "┼");
     }
@@ -1101,10 +1089,8 @@ void tuiPlotFunc(double (*func)(double), double step) {
     if (step <= 0) {
         step = (_viewport.maxX - _viewport.minX) / (double)_internalTermWidth;
     }
-    
     double prevX = _viewport.minX;
     double prevY = func(prevX);
-    
     for (double x = _viewport.minX + step; x <= _viewport.maxX; x += step) {
         double y = func(x);
         tuiPlotLine(prevX, prevY, x, y);
@@ -1131,7 +1117,6 @@ bool tuiHasResized() {
     GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
     currentW = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     currentH = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-    
     if (currentW != _internalTermWidth || currentH != _internalTermHeight) {
         _internalTermWidth = currentW;
         _internalTermHeight = currentH;
@@ -1218,11 +1203,10 @@ int tuiPrinterBool(void* data, bool dryRun) {
 int tuiPrinterString(void* data, bool dryRun) {
     String* sPtr = (String*)data;
     if (!sPtr || !(*sPtr)) {
-        if (dryRun) return 4; 
+        if (dryRun) return 4;
         return printf("NULL");
     }
     String s = *sPtr;
-    
     if (dryRun) return (int)s->len;
     return printf("%s", s->data);
 }
@@ -1233,7 +1217,6 @@ int tuiPrinterCString(void* data, bool dryRun) {
         if (dryRun) return 4;
         return printf("NULL");
     }
-    
     if (dryRun) return snprintf(NULL, 0, "%s", *sPtr);
     return printf("%s", *sPtr);
 }
@@ -1247,75 +1230,59 @@ void tuiSetSearchTerm(char* term) {
 int tuiPrinterStringHighlight(void* data, bool dryRun) {
     String* sPtr = (String*)data;
     if (!sPtr || !(*sPtr)) return 0;
-    
     char* text = (*sPtr)->data;
     size_t len = strlen(text);
-    
     if (dryRun) return (int)len;
-
     if (!_tuiSearchTerm || _tuiSearchTerm[0] == '\0') {
         printf("%s", text);
         return (int)len;
     }
-
     char* match = strstr(text, _tuiSearchTerm);
-
     if (match) {
         size_t prefixLen = match - text;
         size_t searchLen = strlen(_tuiSearchTerm);
-
-        if (prefixLen > 0) {
-            printf("%.*s", (int)prefixLen, text);
-        }
-
+        if (prefixLen > 0) printf("%.*s", (int)prefixLen, text);
         tuiColor(TUI_GREEN);
         tuiStyle(TUI_STYLE_BOLD);
         printf("%.*s", (int)searchLen, match);
         tuiStyle(TUI_STYLE_RESET);
-        tuiColor(TUI_WHITE); 
-
+        tuiColor(TUI_WHITE);
         printf("%s", match + searchLen);
     } else {
         printf("%s", text);
     }
-
     return (int)len;
 }
 
 int tuiPrinterCStringHighlight(void* data, bool dryRun) {
     char** strPtr = (char**)data;
     if (!strPtr || !(*strPtr)) return 0;
-
     char* text = *strPtr;
     size_t len = strlen(text);
-
     if (dryRun) return (int)len;
-
     if (!_tuiSearchTerm || _tuiSearchTerm[0] == '\0') {
         printf("%s", text);
         return (int)len;
     }
-
     char* match = strstr(text, _tuiSearchTerm);
-
     if (match) {
         size_t prefixLen = match - text;
         size_t searchLen = strlen(_tuiSearchTerm);
-
-        if (prefixLen > 0) {
-            printf("%.*s", (int)prefixLen, text);
-        }
-
+        if (prefixLen > 0) printf("%.*s", (int)prefixLen, text);
         tuiColor(TUI_GREEN);
         tuiStyle(TUI_STYLE_BOLD);
         printf("%.*s", (int)searchLen, match);
         tuiStyle(TUI_STYLE_RESET);
         tuiColor(TUI_WHITE);
-
         printf("%s", match + searchLen);
     } else {
         printf("%s", text);
     }
-
     return (int)len;
+}
+
+int tuiPrinterJsonKey(void* data, bool dryRun) {
+    char* key = (char*)data;
+    if (dryRun) return (int)strlen(key);
+    return printf("%s", key);
 }

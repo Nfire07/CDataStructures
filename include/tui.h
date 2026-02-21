@@ -88,7 +88,7 @@ int tuiGetTerminalHeight();
 void tuiClearScreen();
 
 bool tuiHasResized();
-int tuiReadKey();      
+int tuiReadKey();
 
 void tuiGoToXY(int x, int y);
 void tuiCursorVisible(bool visible);
@@ -119,12 +119,12 @@ int projectX(double x);
 int projectY(double y);
 
 void tuiDrawArray(int x, int y, Array arr, int (*printFunc)(void*, bool), bool showHeader);
-void tuiDrawSLinkedList(int x, int y, SLinkedList* list, void (*printFunc)(void*));
-void tuiDrawDLinkedList(int x, int y, DLinkedList* list, void (*printFunc)(void*));
-void tuiDrawStack(int x, int y, Stack* stack, void (*printFunc)(void*));
-void tuiDrawTree(int x, int y, Tree t, void (*printFunc)(void*));
-void tuiDrawHashMap(int x, int y, HashMap map, void (*printKey)(void*), void (*printVal)(void*));
-void tuiDrawSet(int x, int y, Set set, void (*printKey)(void*));
+void tuiDrawSLinkedList(int x, int y, SLinkedList* list, int (*printFunc)(void*, bool));
+void tuiDrawDLinkedList(int x, int y, DLinkedList* list, int (*printFunc)(void*, bool));
+void tuiDrawStack(int x, int y, Stack* stack, int (*printFunc)(void*, bool));
+void tuiDrawTree(int x, int y, Tree t, int (*printFunc)(void*, bool));
+void tuiDrawHashMap(int x, int y, HashMap map, int (*printKey)(void*, bool), int (*printVal)(void*, bool));
+void tuiDrawSet(int x, int y, Set set, int (*printKey)(void*, bool));
 void tuiDrawFileInfo(int x, int y, File f);
 
 void tuiSetViewport(double minX, double maxX, double minY, double maxY);
@@ -146,5 +146,6 @@ int tuiPrinterCString(void* data, bool dryRun);
 void tuiSetSearchTerm(char* term);
 int tuiPrinterStringHighlight(void* data, bool dryRun);
 int tuiPrinterCStringHighlight(void* data, bool dryRun);
+int tuiPrinterJsonKey(void* data, bool dryRun);
 
 #endif

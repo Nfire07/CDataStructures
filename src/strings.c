@@ -225,9 +225,9 @@ String stringTrim(String s) {
     return s;
 }
 
-String stringReplace(String s, const String target, const String replacement) {
-    if (stringIsNull(s) || stringIsNull(target) || stringIsNull(replacement)) return s;
-    if (target->len == 0) return s;
+void stringReplace(String s, const String target, const String replacement) {
+    if (stringIsNull(s) || stringIsNull(target) || stringIsNull(replacement)) return;
+    if (target->len == 0) return;
 
     int count = 0;
     char* p = s->data;
@@ -235,32 +235,55 @@ String stringReplace(String s, const String target, const String replacement) {
         count++;
         p += target->len;
     }
+    if (count == 0) return;
 
-    if (count == 0) return s;
+    size_t newLen = s->len + (size_t)count * (replacement->len - target->len);
 
-    size_t newLen = s->len + count * (replacement->len - target->len);
+    if (replacement->len <= target->len) {
+        char* src  = s->data;
+        char* dest = s->data;
+        char* found;
+
+        while ((found = strstr(src, target->data)) != NULL) {
+            size_t segLen = (size_t)(found - src);
+            memmove(dest, src, segLen);
+            dest += segLen;
+            memcpy(dest, replacement->data, replacement->len);
+            dest += replacement->len;
+            src   = found + target->len;
+        }
+
+        size_t tailLen = (size_t)(s->data + s->len - src);
+        memmove(dest, src, tailLen);
+        dest[tailLen] = '\0';
+
+        s->len = newLen;
+        return;
+    }
+
     char* newData = (char*)xMalloc(newLen + 1);
-    if (!newData) return s;
+    if (!newData) return;
 
-    char* dest = newData;
-    char* src = s->data;
+    char* src   = s->data;
+    char* dest  = newData;
     char* found;
 
     while ((found = strstr(src, target->data)) != NULL) {
-        size_t segmentLen = found - src;
-        memcpy(dest, src, segmentLen);
-        dest += segmentLen;
+        size_t segLen = (size_t)(found - src);
+        memcpy(dest, src, segLen);
+        dest += segLen;
         memcpy(dest, replacement->data, replacement->len);
         dest += replacement->len;
-        src = found + target->len;
+        src   = found + target->len;
     }
-    strcpy(dest, src);
+
+    size_t tailLen = (size_t)(s->data + s->len - src);
+    memcpy(dest, src, tailLen);
+    dest[tailLen] = '\0';
 
     xFree(s->data);
     s->data = newData;
-    s->len = newLen;
-
-    return s;
+    s->len  = newLen;
 }
 
 String stringToUpperCase(String s) {
@@ -418,16 +441,12 @@ String stringReverse(String s) {
     return s;
 }
 
-String stringReplaceChar(const String s, char base, char replace) {
-    if (stringIsNull(s)) return NULL;
-    
-    String copy = stringNew(s->data);
-    if (stringIsNull(copy)) return NULL;
+void stringReplaceCharInPlace(String s, char base, char replace) {
+    if (stringIsNull(s)) return;
 
-    for (size_t i = 0; i < copy->len; i++) {
-        if (copy->data[i] == base) {
-            copy->data[i] = replace;
+    for (size_t i = 0; i < s->len; i++) {
+        if (s->data[i] == base) {
+            s->data[i] = replace;
         }
     }
-    return copy;
 }
