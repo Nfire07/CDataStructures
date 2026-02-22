@@ -83,4 +83,49 @@ HashMap webParseJson(const char *json);
 String webEncodeUrl(const char *str);
 String webDecodeUrl(const char *str);
 
+typedef struct WebClientResponse {
+    int status;
+    String body;
+    HashMap headers;
+    bool ok;
+    String error;
+} WebClientResponse;
+
+typedef struct WebClientOptions {
+    HashMap headers;
+    String body;
+    long timeoutMs;
+    bool followRedirects;
+    bool verifySsl;
+} WebClientOptions;
+
+WebClientOptions webClientOptionsCreate(void);
+void webClientOptionsFree(WebClientOptions *opts);
+void webClientOptionsSetHeader(WebClientOptions *opts, const char *key, const char *value);
+void webClientOptionsSetBody(WebClientOptions *opts, const char *body);
+
+WebClientResponse webClientRequest(const char *method, const char *url, WebClientOptions *opts);
+WebClientResponse webClientGet(const char *url, WebClientOptions *opts);
+WebClientResponse webClientPost(const char *url, const char *jsonBody, WebClientOptions *opts);
+WebClientResponse webClientPut(const char *url, const char *jsonBody, WebClientOptions *opts);
+WebClientResponse webClientDelete(const char *url, WebClientOptions *opts);
+WebClientResponse webClientPatch(const char *url, const char *jsonBody, WebClientOptions *opts);
+
+void webClientResponseFree(WebClientResponse *res);
+
+HashMap webClientParseResponseJson(WebClientResponse *res);
+String webClientGetResponseHeader(WebClientResponse *res, const char *key);
+
+typedef struct {
+    const char *key;
+    const char *value;
+} WebJsonField;
+
+String webJsonBuildObject(WebJsonField *fields, size_t count);
+String webJsonBuildArray(String *items, size_t count);
+String webJsonGetString(HashMap json, const char *key);
+int    webJsonGetInt(HashMap json, const char *key);
+double webJsonGetDouble(HashMap json, const char *key);
+bool   webJsonGetBool(HashMap json, const char *key);
+
 #endif

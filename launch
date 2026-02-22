@@ -5,7 +5,7 @@ CORE_DIR="include/core"
 BIN_DIR="bin"
 OUTPUT="$BIN_DIR/main"
 mkdir -p $BIN_DIR
-gcc -Wall -Wextra main.c $SRC_DIR/*.c $CORE_DIR/mongoose.c -I$INC_DIR -I$CORE_DIR -pthread -lm -o $OUTPUT
+gcc -Wall -Wextra main.c $SRC_DIR/*.c $CORE_DIR/mongoose.c -I$INC_DIR -I$CORE_DIR -pthread -lcjson -lcurl -lm -o $OUTPUT
 if [ $? -eq 0 ]; then
     ./$OUTPUT
 fi

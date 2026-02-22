@@ -26,6 +26,9 @@ static int _internalTermHeight = 24;
 static volatile sig_atomic_t _resizedFlag = 0;
 static TuiViewport _viewport = {-10.0, 10.0, -10.0, 10.0};
 static bool _rawMode = true;
+static int _spinnerFrame = 0;
+static int _dotsCount    = 0;
+
 
 #ifndef _WIN32
 static struct termios orig_termios;
@@ -1285,4 +1288,66 @@ int tuiPrinterJsonKey(void* data, bool dryRun) {
     char* key = (char*)data;
     if (dryRun) return (int)strlen(key);
     return printf("%s", key);
+}
+
+void tuiSpinnerReset(void) {
+    _spinnerFrame = 0;
+}
+
+void tuiSpinnerTick(int x, int y) {
+    const char *frames[] = {"\\", "-", "/", "|"};
+    tuiGoToXY(x, y);
+    tuiColor(TUI_CYAN);
+    printf("%s", frames[_spinnerFrame % 4]);
+    tuiColor(TUI_DEFAULT);
+    _spinnerFrame++;
+}
+
+void tuiDotsReset(void) {
+    _dotsCount = 0;
+}
+
+void tuiDotsTick(int x, int y, int maxDots) {
+    if (maxDots < 1) maxDots = 3;
+    tuiGoToXY(x, y);
+    tuiColor(TUI_CYAN);
+    for (int i = 0; i < maxDots; i++)
+        printf("%s", i < _dotsCount ? "." : " ");
+    tuiColor(TUI_DEFAULT);
+    _dotsCount = (_dotsCount + 1) % (maxDots + 1);
+}
+
+void tuiProgressBar(int x, int y, int width, float percent, const char *label) {
+    if (width < 4) width = 4;
+    if (percent < 0.0f) percent = 0.0f;
+    if (percent > 1.0f) percent = 1.0f;
+
+    int inner   = width - 2;
+    int filled  = (int)(percent * inner);
+    int empty   = inner - filled;
+    int pct     = (int)(percent * 100);
+
+    tuiGoToXY(x, y);
+    tuiColor(TUI_WHITE);
+    printf("[");
+
+    tuiColor(TUI_CYAN);
+    tuiStyle(TUI_STYLE_BOLD);
+    for (int i = 0; i < filled; i++) printf("█");
+    tuiStyle(TUI_STYLE_RESET);
+
+    tuiColor(TUI_WHITE);
+    for (int i = 0; i < empty; i++) printf("░");
+    printf("] ");
+
+    tuiColor(TUI_YELLOW);
+    tuiStyle(TUI_STYLE_BOLD);
+    printf("%3d%%", pct);
+    tuiStyle(TUI_STYLE_RESET);
+
+    if (label && label[0]) {
+        tuiColor(TUI_WHITE);
+        printf("  %s", label);
+    }
+    tuiColor(TUI_DEFAULT);
 }

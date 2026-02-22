@@ -148,4 +148,15 @@ int tuiPrinterStringHighlight(void* data, bool dryRun);
 int tuiPrinterCStringHighlight(void* data, bool dryRun);
 int tuiPrinterJsonKey(void* data, bool dryRun);
 
+void tuiSpinnerTick(int x, int y);
+void tuiSpinnerReset(void);
+void tuiDotsTick(int x, int y, int maxDots);
+void tuiDotsReset(void);
+void tuiProgressBar(int x, int y, int width, float percent, const char *label);
+
+void   webTimingEnable(bool enabled);
+double webGetElapsedMs(void);
+double webGetElapsedS(void);
+void   webGetElapsedMin(int *min, double *sec);
+
 #endif

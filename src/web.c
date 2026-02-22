@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-
+#include <time.h>
 #include "../include/web.h"
 #include "../include/pointers.h"
 #include "../include/strings.h"
@@ -11,6 +11,9 @@
 
 #define MG_ENABLE_MBUF_RELOCATE 1
 #include "../include/core/mongoose.h"
+
+#include <curl/curl.h>
+#include <cjson/cJSON.h>
 
 #define WEB_DEFAULT_MAX_BODY 4194304
 #define WEB_ROUTE_CAPACITY   64
@@ -26,6 +29,26 @@ struct WebServerStruct {
     bool corsEnabled;
     size_t maxBodySize;
 };
+
+static bool            _webTimingEnabled = true;
+static double          _webLastElapsedMs = 0.0;
+
+static void _webTimerBegin(struct timespec *ts) {
+    if (_webTimingEnabled)
+        clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
+static void _webTimerEnd(const struct timespec *start) {
+    if (!_webTimingEnabled) return;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    _webLastElapsedMs = (now.tv_sec  - start->tv_sec)  * 1000.0
+                      + (now.tv_nsec - start->tv_nsec) / 1e6;
+}
+
+void webTimingEnable(bool enabled) {
+    _webTimingEnabled = enabled;
+}
 
 static void _routeFree(void *elem) {
     WebRoute *r = (WebRoute *)elem;
@@ -51,22 +74,8 @@ static void _responseFree(WebResponse *res) {
     xFree(res);
 }
 
-static HashMap _headersMapCreate(void) {
-    HashMap m = mapCreate(64, sizeof(String), WEB_HEADER_CAPACITY);
-    m->hashFunc = hashString;
-    m->keyEquals = keyEqualsString;
-    return m;
-}
-
-static HashMap _queryMapCreate(void) {
-    HashMap m = mapCreate(64, sizeof(String), WEB_QUERY_CAPACITY);
-    m->hashFunc = hashString;
-    m->keyEquals = keyEqualsString;
-    return m;
-}
-
-static HashMap _paramsMapCreate(void) {
-    HashMap m = mapCreate(64, sizeof(String), WEB_PARAM_CAPACITY);
+static HashMap _strHashMapCreate(size_t capacity) {
+    HashMap m = mapCreate(64, sizeof(String), capacity);
     m->hashFunc = hashString;
     m->keyEquals = keyEqualsString;
     return m;
@@ -112,7 +121,7 @@ static bool _matchRoute(const char *pattern, const char *path, HashMap params) {
 }
 
 static HashMap _parseQueryString(const char *qs) {
-    HashMap map = _queryMapCreate();
+    HashMap map = _strHashMapCreate(WEB_QUERY_CAPACITY);
     if (!qs || *qs == '\0') return map;
 
     char *buf = (char *)xMalloc(strlen(qs) + 1);
@@ -125,7 +134,6 @@ static HashMap _parseQueryString(const char *qs) {
             *eq = '\0';
             char *k = token;
             char *v = eq + 1;
-
             char *kCopy = (char *)xMalloc(strlen(k) + 1);
             strcpy(kCopy, k);
             String vStr = stringNew(v);
@@ -163,8 +171,8 @@ static WebRequest *_buildRequest(struct mg_http_message *hm) {
 
     req->path = stringNew(pathBuf);
     req->query = _parseQueryString(queryBuf);
-    req->params = _paramsMapCreate();
-    req->headers = _headersMapCreate();
+    req->params = _strHashMapCreate(WEB_PARAM_CAPACITY);
+    req->headers = _strHashMapCreate(WEB_HEADER_CAPACITY);
 
     for (int i = 0; i < MG_MAX_HTTP_HEADERS; i++) {
         struct mg_str name = hm->headers[i].name;
@@ -201,7 +209,7 @@ static WebResponse *_responseCreate(void) {
     WebResponse *res = (WebResponse *)xMalloc(sizeof(WebResponse));
     res->status = 200;
     res->body = stringNew("");
-    res->headers = _headersMapCreate();
+    res->headers = _strHashMapCreate(WEB_HEADER_CAPACITY);
     return res;
 }
 
@@ -287,7 +295,7 @@ static void _webEventHandler(struct mg_connection *c, int ev, void *ev_data) {
 
             if (strcmp(routeMethod, methodBuf) != 0) continue;
 
-            HashMap tempParams = _paramsMapCreate();
+            HashMap tempParams = _strHashMapCreate(WEB_PARAM_CAPACITY);
             if (_matchRoute(routePattern, pathBuf, tempParams)) {
                 WebRequest *req = _buildRequest(hm);
                 mapFree(req->params, NULL, NULL);
@@ -584,50 +592,409 @@ HashMap webParseJson(const char *json) {
 
     if (!json) return map;
 
-    const char *p = json;
-    while (*p && *p != '{') p++;
-    if (*p == '{') p++;
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return map;
 
-    while (*p) {
-        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
-        if (*p == '}' || *p == '\0') break;
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, root) {
+        if (!item->string) continue;
 
-        if (*p != '"') { p++; continue; }
-        p++;
+        char *kCopy = (char *)xMalloc(strlen(item->string) + 1);
+        strcpy(kCopy, item->string);
 
-        char key[256];
-        int ki = 0;
-        while (*p && *p != '"' && ki < 255) key[ki++] = *p++;
-        key[ki] = '\0';
-        if (*p == '"') p++;
-
-        while (*p == ' ' || *p == ':') p++;
-
-        char val[1024];
-        int vi = 0;
-        bool isString = false;
-
-        if (*p == '"') {
-            isString = true;
-            p++;
-            while (*p && *p != '"' && vi < 1023) {
-                if (*p == '\\') { p++; if (*p) val[vi++] = *p++; }
-                else val[vi++] = *p++;
-            }
-            if (*p == '"') p++;
+        String vStr = NULL;
+        if (cJSON_IsString(item) && item->valuestring) {
+            vStr = stringNew(item->valuestring);
+        } else if (cJSON_IsNumber(item)) {
+            char numBuf[64];
+            if (item->valuedouble == (double)(long long)item->valuedouble)
+                snprintf(numBuf, sizeof(numBuf), "%lld", (long long)item->valuedouble);
+            else
+                snprintf(numBuf, sizeof(numBuf), "%g", item->valuedouble);
+            vStr = stringNew(numBuf);
+        } else if (cJSON_IsBool(item)) {
+            vStr = stringNew(cJSON_IsTrue(item) ? "true" : "false");
+        } else if (cJSON_IsNull(item)) {
+            vStr = stringNew("null");
         } else {
-            while (*p && *p != ',' && *p != '}' && vi < 1023) val[vi++] = *p++;
+            char *printed = cJSON_PrintUnformatted(item);
+            vStr = printed ? stringNew(printed) : stringNew("");
+            if (printed) free(printed);
         }
-        val[vi] = '\0';
 
-        char *kCopy = (char *)xMalloc(strlen(key) + 1);
-        strcpy(kCopy, key);
-        String vStr = stringNew(val);
         mapPut(map, kCopy, &vStr);
         xFree(kCopy);
-
-        (void)isString;
     }
 
+    cJSON_Delete(root);
     return map;
+}
+
+typedef struct {
+    char *data;
+    size_t size;
+} _CurlBuffer;
+
+static size_t _curlWriteBody(void *ptr, size_t size, size_t nmemb, void *userdata) {
+    _CurlBuffer *buf = (_CurlBuffer *)userdata;
+    size_t realSize = size * nmemb;
+    char *newData = (char *)realloc(buf->data, buf->size + realSize + 1);
+    if (!newData) return 0;
+    buf->data = newData;
+    memcpy(buf->data + buf->size, ptr, realSize);
+    buf->size += realSize;
+    buf->data[buf->size] = '\0';
+    return realSize;
+}
+
+static size_t _curlWriteHeaders(char *buffer, size_t size, size_t nitems, void *userdata) {
+    HashMap headers = (HashMap)userdata;
+    size_t total = size * nitems;
+
+    char *line = (char *)malloc(total + 1);
+    memcpy(line, buffer, total);
+    line[total] = '\0';
+
+    char *colon = strchr(line, ':');
+    if (colon && colon != line) {
+        *colon = '\0';
+        char *key = line;
+        char *val = colon + 1;
+        while (*val == ' ') val++;
+        size_t vlen = strlen(val);
+        while (vlen > 0 && (val[vlen-1] == '\r' || val[vlen-1] == '\n' || val[vlen-1] == ' '))
+            val[--vlen] = '\0';
+
+        char *kLower = (char *)malloc(strlen(key) + 1);
+        for (size_t i = 0; key[i]; i++) kLower[i] = (char)tolower((unsigned char)key[i]);
+        kLower[strlen(key)] = '\0';
+
+        char *kCopy = (char *)xMalloc(strlen(kLower) + 1);
+        strcpy(kCopy, kLower);
+        String vStr = stringNew(val);
+        mapPut(headers, kCopy, &vStr);
+        xFree(kCopy);
+        free(kLower);
+    }
+
+    free(line);
+    return total;
+}
+
+WebClientOptions webClientOptionsCreate(void) {
+    WebClientOptions opts;
+    opts.headers = _strHashMapCreate(WEB_HEADER_CAPACITY);
+    opts.body = NULL;
+    opts.timeoutMs = 30000;
+    opts.followRedirects = true;
+    opts.verifySsl = true;
+    return opts;
+}
+
+void webClientOptionsFree(WebClientOptions *opts) {
+    if (!opts) return;
+    if (opts->headers) mapFree(opts->headers, NULL, NULL);
+    if (opts->body) stringFree(opts->body);
+    opts->headers = NULL;
+    opts->body = NULL;
+}
+
+void webClientOptionsSetHeader(WebClientOptions *opts, const char *key, const char *value) {
+    if (!opts || !key) return;
+    char *kCopy = (char *)xMalloc(strlen(key) + 1);
+    strcpy(kCopy, key);
+    String vStr = stringNew(value ? value : "");
+    mapPut(opts->headers, kCopy, &vStr);
+    xFree(kCopy);
+}
+
+void webClientOptionsSetBody(WebClientOptions *opts, const char *body) {
+    if (!opts) return;
+    if (opts->body) stringFree(opts->body);
+    opts->body = body ? stringNew(body) : NULL;
+}
+
+WebClientResponse webClientRequest(const char *method, const char *url, WebClientOptions *opts) {
+    WebClientResponse result;
+    result.status = 0;
+    result.body = NULL;
+    result.headers = _strHashMapCreate(WEB_HEADER_CAPACITY);
+    result.ok = false;
+    result.error = NULL;
+
+    if (!url || !method) {
+        result.error = stringNew("Invalid URL or method");
+        return result;
+    }
+
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        result.error = stringNew("Failed to initialize libcurl");
+        return result;
+    }
+
+    _CurlBuffer bodyBuf = {NULL, 0};
+    bodyBuf.data = (char *)malloc(1);
+    bodyBuf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _curlWriteBody);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bodyBuf);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, _curlWriteHeaders);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, result.headers);
+
+    long timeoutMs = opts ? opts->timeoutMs : 30000;
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs);
+
+    bool followRedirects = opts ? opts->followRedirects : true;
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, followRedirects ? 1L : 0L);
+
+    bool verifySsl = opts ? opts->verifySsl : true;
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verifySsl ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verifySsl ? 2L : 0L);
+
+    struct curl_slist *curlHeaders = NULL;
+
+    if (opts && opts->headers) {
+        for (size_t i = 0; i < opts->headers->capacity; i++) {
+            MapEntry *entry = opts->headers->buckets[i];
+            while (entry) {
+                char *k = (char *)entry->key;
+                String *vPtr = (String *)entry->value;
+                if (vPtr && *vPtr) {
+                    size_t hLen = strlen(k) + 2 + stringLength(*vPtr) + 1;
+                    char *hLine = (char *)malloc(hLen);
+                    snprintf(hLine, hLen, "%s: %s", k, stringGetData(*vPtr));
+                    curlHeaders = curl_slist_append(curlHeaders, hLine);
+                    free(hLine);
+                }
+                entry = entry->next;
+            }
+        }
+    }
+
+    const char *bodyData = NULL;
+    size_t bodyLen = 0;
+    if (opts && opts->body) {
+        bodyData = stringGetData(opts->body);
+        bodyLen = stringLength(opts->body);
+    }
+
+    if (strcmp(method, WEB_METHOD_GET) == 0) {
+        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    } else if (strcmp(method, WEB_METHOD_POST) == 0) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyData ? bodyData : "");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)bodyLen);
+    } else if (strcmp(method, WEB_METHOD_PUT) == 0) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+        if (bodyData) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyData);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)bodyLen);
+        }
+    } else if (strcmp(method, WEB_METHOD_DELETE) == 0) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    } else if (strcmp(method, WEB_METHOD_PATCH) == 0) {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+        if (bodyData) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyData);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)bodyLen);
+        }
+    } else {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
+        if (bodyData) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyData);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)bodyLen);
+        }
+    }
+
+    if (curlHeaders)
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, curlHeaders);
+
+    struct timespec _t0;
+    _webTimerBegin(&_t0);
+    CURLcode res = curl_easy_perform(curl);
+    _webTimerEnd(&_t0);
+
+    if (res != CURLE_OK) {
+        result.error = stringNew(curl_easy_strerror(res));
+        result.body = stringNew("");
+    } else {
+        long httpCode = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        result.status = (int)httpCode;
+        result.body = stringNew(bodyBuf.data ? bodyBuf.data : "");
+        result.ok = (httpCode >= 200 && httpCode < 300);
+    }
+
+    if (curlHeaders) curl_slist_free_all(curlHeaders);
+    free(bodyBuf.data);
+    curl_easy_cleanup(curl);
+
+    return result;
+}
+
+WebClientResponse webClientGet(const char *url, WebClientOptions *opts) {
+    return webClientRequest(WEB_METHOD_GET, url, opts);
+}
+
+WebClientResponse webClientPost(const char *url, const char *jsonBody, WebClientOptions *opts) {
+    WebClientOptions defaultOpts;
+    bool created = false;
+
+    if (!opts) {
+        defaultOpts = webClientOptionsCreate();
+        opts = &defaultOpts;
+        created = true;
+    }
+
+    if (jsonBody) webClientOptionsSetBody(opts, jsonBody);
+
+    char *existingCT = NULL;
+    if (opts->headers) {
+        char *ctKey = (char *)xMalloc(13);
+        strcpy(ctKey, "Content-Type");
+        existingCT = (char *)mapGet(opts->headers, ctKey);
+        xFree(ctKey);
+    }
+    if (!existingCT)
+        webClientOptionsSetHeader(opts, "Content-Type", "application/json");
+
+    WebClientResponse result = webClientRequest(WEB_METHOD_POST, url, opts);
+
+    if (created) webClientOptionsFree(opts);
+    return result;
+}
+
+WebClientResponse webClientPut(const char *url, const char *jsonBody, WebClientOptions *opts) {
+    WebClientOptions defaultOpts;
+    bool created = false;
+
+    if (!opts) {
+        defaultOpts = webClientOptionsCreate();
+        opts = &defaultOpts;
+        created = true;
+    }
+
+    if (jsonBody) webClientOptionsSetBody(opts, jsonBody);
+    webClientOptionsSetHeader(opts, "Content-Type", "application/json");
+
+    WebClientResponse result = webClientRequest(WEB_METHOD_PUT, url, opts);
+
+    if (created) webClientOptionsFree(opts);
+    return result;
+}
+
+WebClientResponse webClientDelete(const char *url, WebClientOptions *opts) {
+    return webClientRequest(WEB_METHOD_DELETE, url, opts);
+}
+
+WebClientResponse webClientPatch(const char *url, const char *jsonBody, WebClientOptions *opts) {
+    WebClientOptions defaultOpts;
+    bool created = false;
+
+    if (!opts) {
+        defaultOpts = webClientOptionsCreate();
+        opts = &defaultOpts;
+        created = true;
+    }
+
+    if (jsonBody) webClientOptionsSetBody(opts, jsonBody);
+    webClientOptionsSetHeader(opts, "Content-Type", "application/json");
+
+    WebClientResponse result = webClientRequest(WEB_METHOD_PATCH, url, opts);
+
+    if (created) webClientOptionsFree(opts);
+    return result;
+}
+
+void webClientResponseFree(WebClientResponse *res) {
+    if (!res) return;
+    if (res->body) stringFree(res->body);
+    if (res->headers) mapFree(res->headers, NULL, NULL);
+    if (res->error) stringFree(res->error);
+    res->body = NULL;
+    res->headers = NULL;
+    res->error = NULL;
+}
+
+HashMap webClientParseResponseJson(WebClientResponse *res) {
+    if (!res || !res->body) return webParseJson(NULL);
+    return webParseJson(stringGetData(res->body));
+}
+
+String webClientGetResponseHeader(WebClientResponse *res, const char *key) {
+    if (!res || !res->headers || !key) return NULL;
+    char *kLower = (char *)xMalloc(strlen(key) + 1);
+    for (size_t i = 0; key[i]; i++) kLower[i] = (char)tolower((unsigned char)key[i]);
+    kLower[strlen(key)] = '\0';
+    String *val = (String *)mapGet(res->headers, kLower);
+    xFree(kLower);
+    return val ? *val : NULL;
+}
+
+String webJsonBuildObject(WebJsonField *fields, size_t count) {
+    if (!fields || count == 0) return stringNew("{}");
+
+    cJSON *root = cJSON_CreateObject();
+    for (size_t i = 0; i < count; i++) {
+        if (fields[i].key && fields[i].value)
+            cJSON_AddStringToObject(root, fields[i].key, fields[i].value);
+    }
+
+    char *printed = cJSON_PrintUnformatted(root);
+    String result = printed ? stringNew(printed) : stringNew("{}");
+    if (printed) free(printed);
+    cJSON_Delete(root);
+    return result;
+}
+
+String webJsonBuildArray(String *items, size_t count) {
+    if (!items || count == 0) return stringNew("[]");
+
+    cJSON *arr = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++) {
+        if (items[i])
+            cJSON_AddItemToArray(arr, cJSON_CreateString(stringGetData(items[i])));
+    }
+
+    char *printed = cJSON_PrintUnformatted(arr);
+    String result = printed ? stringNew(printed) : stringNew("[]");
+    if (printed) free(printed);
+    cJSON_Delete(arr);
+    return result;
+}
+
+String webJsonGetString(HashMap json, const char *key) {
+    if (!json || !key) return NULL;
+    char *kCopy = (char *)xMalloc(strlen(key) + 1);
+    strcpy(kCopy, key);
+    String *val = (String *)mapGet(json, kCopy);
+    xFree(kCopy);
+    return val ? *val : NULL;
+}
+
+int webJsonGetInt(HashMap json, const char *key) {
+    String val = webJsonGetString(json, key);
+    return val ? stringParseInt(val) : 0;
+}
+
+double webJsonGetDouble(HashMap json, const char *key) {
+    String val = webJsonGetString(json, key);
+    return val ? stringParseDouble(val) : 0.0;
+}
+
+bool webJsonGetBool(HashMap json, const char *key) {
+    String val = webJsonGetString(json, key);
+    if (!val) return false;
+    const char *s = stringGetData(val);
+    return s && strcmp(s, "true") == 0;
+}
+
+double webGetElapsedMs(void) {
+    return _webLastElapsedMs;
+}
+
+double webGetElapsedS(void) {
+    return _webLastElapsedMs / 1000.0;
 }
